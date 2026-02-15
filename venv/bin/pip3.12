@@ -1,4 +1,4 @@
-#!/home/mdraselbackenddev/Rasel/Zuhha/venv/bin/python3
+#!/home/mdraselbackenddev/Rasel/salahtime/venv/bin/python
 # -*- coding: utf-8 -*-
 import re
 import sys
