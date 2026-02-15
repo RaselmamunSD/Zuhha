@@ -4,7 +4,6 @@ from django.shortcuts import render
 from rest_framework import viewsets
 from .models import PrayerTime, Location, UserPreference
 from .serializers import PrayerTimeSerializer, LocationSerializer, UserPreferenceSerializer
-
 class PrayerTimeViewSet(viewsets.ModelViewSet):
     queryset = PrayerTime.objects.all()
     serializer_class = PrayerTimeSerializer
