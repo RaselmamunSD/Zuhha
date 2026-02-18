@@ -20,6 +20,13 @@ from django.urls import include, path
 urlpatterns = [
     path('admin/', admin.site.urls),
     
-    
-
+    # API endpoints
+    path('api/auth/', include('Authentication.urls')),
+    path('api/prayer-times/', include('prayer_times.urls')),
+    path('api/locations/', include('locations.urls')),
+    path('api/users/', include('users.urls')),
+    path('api/subscribe/', include('subscribe.urls')),
+    path('api/mosques/', include('find_mosque.urls')),
+    path('api/', include('api.urls')),
 ]
+

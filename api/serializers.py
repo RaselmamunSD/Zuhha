@@ -1,5 +1,6 @@
 from rest_framework import serializers
-from .models import PrayerTime, Location, UserPreference
+from prayer_times.models import PrayerTime
+from .models import Location, UserPreference
 
 class PrayerTimeSerializer(serializers.ModelSerializer):
     class Meta:

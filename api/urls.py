@@ -1,9 +1,13 @@
-from django.urls import path
+from django.urls import path, include
+from rest_framework.routers import DefaultRouter
 from .views import PrayerTimeViewSet, LocationViewSet, UserPreferenceViewSet
 
 router = DefaultRouter()
-router.register(r'prayer-times', PrayerTimeViewSet)
-router.register(r'locations', LocationViewSet)
-router.register(r'user-preferences', UserPreferenceViewSet)
+router.register(r'prayertimes', PrayerTimeViewSet, basename='prayertime')
+router.register(r'locations', LocationViewSet, basename='location')
+router.register(r'preferences', UserPreferenceViewSet, basename='userpreference')
 
-urlpatterns = router.urls
+urlpatterns = [
+    path('', include(router.urls)),
+]
+
