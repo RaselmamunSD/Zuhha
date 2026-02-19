@@ -48,6 +48,7 @@ INSTALLED_APPS = [
     'Authentication',
     'subscribe',
     'find_mosque',
+    'push_notification',
 ]
     
 
