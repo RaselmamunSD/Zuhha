@@ -1059,7 +1059,7 @@
             }
           }
         },
-        {
+{
           "name": "Delete Mosque Image",
           "request": {
             "method": "DELETE",
@@ -1067,6 +1067,273 @@
               "raw": "{{baseUrl}}/api/mosques/1/images/1/",
               "host": ["{{baseUrl}}"],
               "path": ["api", "mosques", "1", "images", "1", ""]
+            },
+            "header": [
+              {
+                "key": "Authorization",
+                "value": "Token {{authToken}}"
+              }
+            ]
+          }
+        }
+      ]
+    },
+    {
+      "name": "Push Notifications",
+      "item": [
+        {
+          "name": "List WhatsApp Notifications",
+          "request": {
+            "method": "GET",
+            "url": {
+              "raw": "{{baseUrl}}/api/notifications/whatsapp/",
+              "host": ["{{baseUrl}}"],
+              "path": ["api", "notifications", "whatsapp", ""]
+            },
+            "header": [
+              {
+                "key": "Authorization",
+                "value": "Token {{authToken}}"
+              }
+            ]
+          }
+        },
+        {
+          "name": "Create WhatsApp Subscription",
+          "request": {
+            "method": "POST",
+            "url": {
+              "raw": "{{baseUrl}}/api/notifications/whatsapp/",
+              "host": ["{{baseUrl}}"],
+              "path": ["api", "notifications", "whatsapp", ""]
+            },
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n    \"phone_number\": \"1234567890\",\n    \"country_code\": \"+880\",\n    \"notification_types\": [\"fajr\", \"dhuhr\", \"asr\", \"maghrib\", \"isha\"],\n    \"language\": \"en\",\n    \"city\": 1,\n    \"notification_minutes_before\": 10\n}"
+            }
+          }
+        },
+        {
+          "name": "Get WhatsApp Notification Detail",
+          "request": {
+            "method": "GET",
+            "url": {
+              "raw": "{{baseUrl}}/api/notifications/whatsapp/1/",
+              "host": ["{{baseUrl}}"],
+              "path": ["api", "notifications", "whatsapp", "1", ""]
+            },
+            "header": [
+              {
+                "key": "Authorization",
+                "value": "Token {{authToken}}"
+              }
+            ]
+          }
+        },
+        {
+          "name": "Update WhatsApp Notification",
+          "request": {
+            "method": "PUT",
+            "url": {
+              "raw": "{{baseUrl}}/api/notifications/whatsapp/1/",
+              "host": ["{{baseUrl}}"],
+              "path": ["api", "notifications", "whatsapp", "1", ""]
+            },
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              },
+              {
+                "key": "Authorization",
+                "value": "Token {{authToken}}"
+              }
+            ],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n    \"phone_number\": \"1234567890\",\n    \"country_code\": \"+880\",\n    \"notification_types\": [\"fajr\", \"dhuhr\", \"asr\", \"maghrib\", \"isha\"],\n    \"language\": \"bn\",\n    \"city\": 1,\n    \"notification_minutes_before\": 15,\n    \"is_active\": true\n}"
+            }
+          }
+        },
+        {
+          "name": "Delete WhatsApp Notification",
+          "request": {
+            "method": "DELETE",
+            "url": {
+              "raw": "{{baseUrl}}/api/notifications/whatsapp/1/",
+              "host": ["{{baseUrl}}"],
+              "path": ["api", "notifications", "whatsapp", "1", ""]
+            },
+            "header": [
+              {
+                "key": "Authorization",
+                "value": "Token {{authToken}}"
+              }
+            ]
+          }
+        },
+        {
+          "name": "Verify WhatsApp Number",
+          "request": {
+            "method": "POST",
+            "url": {
+              "raw": "{{baseUrl}}/api/notifications/whatsapp/1/verify/",
+              "host": ["{{baseUrl}}"],
+              "path": ["api", "notifications", "whatsapp", "1", "verify", ""]
+            },
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              },
+              {
+                "key": "Authorization",
+                "value": "Token {{authToken}}"
+              }
+            ]
+          }
+        },
+        {
+          "name": "Send Test Notification",
+          "request": {
+            "method": "POST",
+            "url": {
+              "raw": "{{baseUrl}}/api/notifications/whatsapp/1/send_test/",
+              "host": ["{{baseUrl}}"],
+              "path": ["api", "notifications", "whatsapp", "1", "send_test", ""]
+            },
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              },
+              {
+                "key": "Authorization",
+                "value": "Token {{authToken}}"
+              }
+            ]
+          }
+        },
+        {
+          "name": "My Subscriptions",
+          "request": {
+            "method": "GET",
+            "url": {
+              "raw": "{{baseUrl}}/api/notifications/whatsapp/my_subscriptions/",
+              "host": ["{{baseUrl}}"],
+              "path": ["api", "notifications", "whatsapp", "my_subscriptions", ""]
+            },
+            "header": [
+              {
+                "key": "Authorization",
+                "value": "Token {{authToken}}"
+              }
+            ]
+          }
+        },
+        {
+          "name": "List Notification Logs",
+          "request": {
+            "method": "GET",
+            "url": {
+              "raw": "{{baseUrl}}/api/notifications/logs/",
+              "host": ["{{baseUrl}}"],
+              "path": ["api", "notifications", "logs", ""]
+            },
+            "header": [
+              {
+                "key": "Authorization",
+                "value": "Token {{authToken}}"
+              }
+            ]
+          }
+        },
+        {
+          "name": "Get Notification Log Detail",
+          "request": {
+            "method": "GET",
+            "url": {
+              "raw": "{{baseUrl}}/api/notifications/logs/1/",
+              "host": ["{{baseUrl}}"],
+              "path": ["api", "notifications", "logs", "1", ""]
+            },
+            "header": [
+              {
+                "key": "Authorization",
+                "value": "Token {{authToken}}"
+              }
+            ]
+          }
+        }
+      ]
+    },
+    {
+      "name": "Celery Tasks",
+      "item": [
+        {
+          "name": "Send Prayer Notification (Task)",
+          "request": {
+            "method": "POST",
+            "url": {
+              "raw": "{{baseUrl}}/api/notifications/tasks/send_prayer_notification/",
+              "host": ["{{baseUrl}}"],
+              "path": ["api", "notifications", "tasks", "send_prayer_notification", ""]
+            },
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              },
+              {
+                "key": "Authorization",
+                "value": "Token {{authToken}}"
+              }
+            ],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n    \"prayer_name\": \"fajr\",\n    \"city_id\": 1\n}"
+            }
+          }
+        },
+        {
+          "name": "Send Daily Summary (Task)",
+          "request": {
+            "method": "POST",
+            "url": {
+              "raw": "{{baseUrl}}/api/notifications/tasks/send_daily_summary/",
+              "host": ["{{baseUrl}}"],
+              "path": ["api", "notifications", "tasks", "send_daily_summary", ""]
+            },
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              },
+              {
+                "key": "Authorization",
+                "value": "Token {{authToken}}"
+              }
+            ],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n    \"city_id\": 1\n}"
+            }
+          }
+        },
+        {
+          "name": "Health Check (Celery Status)",
+          "request": {
+            "method": "GET",
+            "url": {
+              "raw": "{{baseUrl}}/api/notifications/tasks/health/",
+              "host": ["{{baseUrl}}"],
+              "path": ["api", "notifications", "tasks", "health", ""]
             },
             "header": [
               {

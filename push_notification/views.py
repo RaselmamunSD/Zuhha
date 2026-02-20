@@ -79,22 +79,16 @@ class WhatsAppNotificationViewSet(viewsets.ModelViewSet):
         """
         whatsapp = self.get_object()
         
-        # Create a test notification log
-        log = WhatsAppNotificationLog.objects.create(
-            whatsapp=whatsapp,
-            message="This is a test notification from Salahtime API.",
-            prayer_name='test',
-            status='pending'
-        )
+        message = "This is a test notification from Salahtime API."
         
-        # Here you would integrate with Twilio or another WhatsApp service
-        # For now, we'll just return success
-        log.status = 'sent'
-        log.save()
+        # Use Celery task to send notification
+        from .tasks import send_whatsapp_notification
+        task = send_whatsapp_notification.delay(whatsapp.id, message)
         
         return Response({
-            'detail': 'Test notification sent.',
-            'log_id': log.id
+            'detail': 'Test notification queued.',
+            'task_id': task.id,
+            'whatsapp_id': whatsapp.id
         })
     
     @action(detail=False, methods=['get'])
