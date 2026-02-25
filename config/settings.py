@@ -29,6 +29,7 @@ DEBUG = True
 ALLOWED_HOSTS = ['0.0.0.0', 'localhost', '127.0.0.1']
 
 
+
 # Application definition
 
 INSTALLED_APPS = [
@@ -50,6 +51,7 @@ INSTALLED_APPS = [
     'subscribe',
     'find_mosque',
     'push_notification',
+
 ]
     
 
@@ -66,7 +68,16 @@ MIDDLEWARE = [
     'django.middleware.clickjacking.XFrameOptionsMiddleware',
 ]
 
-CORS_ALLOW_ALL_ORIGINS = True
+
+# settings.py
+CORS_ALLOWED_ORIGINS = [
+    "http://localhost:3000",  # Example for a React development server
+    "http://127.0.0.1:3000",  # Alternative localhost URL
+    #"https://your-frontend-domain.com", # Your production frontend domain
+]
+
+CORS_ALLOW_ALL_ORIGINS = False
+CORS_ALLOW_CREDENTIALS = True
 ROOT_URLCONF = 'config.urls'
 
 TEMPLATES = [
