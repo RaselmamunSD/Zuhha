@@ -1,0 +1,54 @@
+[Unit]
+Description=Salahtime Django Application
+Documentation=https://github.com/yourusername/salahtime
+After=network.target postgresql.service redis-server.service
+Wants=postgresql.service redis-server.service
+
+[Service]
+Type=notify
+User=www-data
+Group=www-data
+WorkingDirectory=/home/mdraselbackenddev/Rasel/zuhha/salahtime
+
+# Virtual environment
+Environment="PATH=/home/mdraselbackenddev/Rasel/zuhha/salahtime/venv/bin"
+Environment="PYTHONUNBUFFERED=1"
+Environment="DJANGO_SETTINGS_MODULE=config.settings"
+
+# Gunicorn command with configuration file
+ExecStart=/home/mdraselbackenddev/Rasel/zuhha/salahtime/venv/bin/gunicorn \
+    --config /home/mdraselbackenddev/Rasel/zuhha/salahtime/gunicorn_config.py \
+    config.asgi:application \
+    --access-logfile /var/log/salahtime/access.log \
+    --error-logfile /var/log/salahtime/error.log \
+    --log-level info \
+    --capture-output
+
+# Graceful restart
+ExecReload=/bin/kill -s HUP $MAINPID
+
+# Graceful stop
+ExecStop=/bin/kill -s TERM $MAINPID
+
+# Timeout settings
+TimeoutStartSec=60
+TimeoutStopSec=60
+
+# Restart policy
+Restart=always
+RestartSec=10
+
+# Resource limits (optional - adjust based on server resources)
+MemoryMax=1G
+MemoryHigh=800M
+
+# Security settings
+NoNewPrivileges=true
+PrivateTmp=true
+ProtectSystem=strict
+ProtectHome=true
+ReadWritePaths=/var/log/salahtime /var/www/salahtime
+
+[Install]
+WantedBy=multi-user.target
+

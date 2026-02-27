@@ -29,4 +29,3 @@ try:
         app.conf.beat_schedule = schedule_app.conf.beat_schedule
 except ImportError:
     pass
-

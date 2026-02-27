@@ -9,10 +9,11 @@ class UserRegistrationSerializer(serializers.ModelSerializer):
     """Serializer for user registration."""
     password = serializers.CharField(write_only=True, min_length=8)
     password_confirm = serializers.CharField(write_only=True, min_length=8)
+    profile_image = serializers.ImageField(required=False, allow_null=True)
     
     class Meta:
         model = User
-        fields = ['username', 'email', 'password', 'password_confirm', 'first_name', 'last_name']
+        fields = ['username', 'email', 'password', 'password_confirm', 'first_name', 'last_name', 'profile_image']
     
     def validate(self, data):
         if data['password'] != data['password_confirm']:
@@ -20,8 +21,17 @@ class UserRegistrationSerializer(serializers.ModelSerializer):
         return data
     
     def create(self, validated_data):
+        from users.models import UserProfile
+        profile_image = validated_data.pop('profile_image', None)
         validated_data.pop('password_confirm')
         user = User.objects.create_user(**validated_data)
+        
+        # Update user profile with profile image if provided
+        # The post_save signal already creates a UserProfile, so we just update it
+        if profile_image:
+            user.profile.profile_image = profile_image
+            user.profile.save()
+        
         return user
 
 
@@ -35,10 +45,10 @@ class LoginSerializer(serializers.Serializer):
         password = data.get('password')
         
         if email and password:
-            # Find user by email
-            try:
-                user = User.objects.get(email=email)
-            except User.DoesNotExist:
+            # Find user by email - use filter().first() to handle duplicate emails
+            user = User.objects.filter(email=email).first()
+            
+            if not user:
                 raise serializers.ValidationError("Invalid email or password.")
             
             if not user.check_password(password):
@@ -85,11 +95,25 @@ class TokenRefreshSerializer(serializers.Serializer):
 
 class UserSerializer(serializers.ModelSerializer):
     """Serializer for user details."""
+    profile_image = serializers.SerializerMethodField()
     
     class Meta:
         model = User
-        fields = ['id', 'username', 'email', 'first_name', 'last_name', 'date_joined', 'is_staff']
+        fields = ['id', 'username', 'email', 'first_name', 'last_name', 'date_joined', 'is_staff', 'profile_image']
         read_only_fields = ['id', 'date_joined', 'is_staff']
+    
+    def get_profile_image(self, obj):
+        """Get the profile image URL from the related UserProfile."""
+        try:
+            if hasattr(obj, 'profile') and obj.profile.profile_image:
+                request = self.context.get('request')
+                if request and obj.profile.profile_image.url:
+                    # Return full URL if request is available
+                    return request.build_absolute_uri(obj.profile.profile_image.url)
+                return obj.profile.profile_image.url
+        except Exception:
+            pass
+        return None
 
 
 class ChangePasswordSerializer(serializers.Serializer):
@@ -106,15 +130,27 @@ class ChangePasswordSerializer(serializers.Serializer):
 
 class UpdateUserSerializer(serializers.ModelSerializer):
     """Serializer for updating user information."""
-    email = serializers.EmailField(required=False)
+    # Note: email is intentionally excluded because:
+    # 1. Users cannot change their email (it's disabled in the form)
+    # 2. Email validation would fail if email is already taken
+    profile_image = serializers.ImageField(required=False, allow_null=True)
     
     class Meta:
         model = User
-        fields = ['first_name', 'last_name', 'email']
+        fields = ['first_name', 'last_name', 'profile_image']
     
-    def validate_email(self, value):
-        user = self.context['request'].user
-        if User.objects.exclude(pk=user.pk).filter(email=value).exists():
-            raise serializers.ValidationError("This email is already in use.")
-        return value
+    def update(self, instance, validated_data):
+        profile_image = validated_data.pop('profile_image', None)
+        
+        # Update user fields
+        for attr, value in validated_data.items():
+            setattr(instance, attr, value)
+        instance.save()
+        
+        # Update profile image if provided
+        if profile_image is not None:
+            instance.profile.profile_image = profile_image
+            instance.profile.save()
+        
+        return instance
 

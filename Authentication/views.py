@@ -23,14 +23,8 @@ class AuthViewSet(viewsets.GenericViewSet):
         serializer = self.get_serializer(data=request.data)
         serializer.is_valid(raise_exception=True)
         
-        # The to_representation method now generates JWT tokens
-        response_data = serializer.validated_data
-        user = response_data['user']
-        
-        return Response({
-            'user': UserSerializer(user).data,
-            'tokens': response_data['tokens']
-        }, status=status.HTTP_200_OK)
+        # Use serializer.data which includes tokens from to_representation()
+        return Response(serializer.data, status=status.HTTP_200_OK)
     
     @action(detail=False, methods=['post'], permission_classes=[AllowAny])
     def register(self, request):
@@ -39,7 +33,7 @@ class AuthViewSet(viewsets.GenericViewSet):
         """
         from .serializers import UserRegistrationSerializer
         
-        serializer = UserRegistrationSerializer(data=request.data)
+        serializer = UserRegistrationSerializer(data=request.data, context={'request': request})
         serializer.is_valid(raise_exception=True)
         user = serializer.save()
         
@@ -47,7 +41,7 @@ class AuthViewSet(viewsets.GenericViewSet):
         refresh = RefreshToken.for_user(user)
         
         return Response({
-            'user': UserSerializer(user).data,
+            'user': UserSerializer(user, context={'request': request}).data,
             'tokens': {
                 'refresh': str(refresh),
                 'access': str(refresh.access_token),
