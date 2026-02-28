@@ -35,6 +35,7 @@ urlpatterns = [
     path('api/mosques/', include('find_mosque.urls')),
     path('api/push/', include('push_notification.urls')),
     path('api/notifications/', include('push_notification.urls')),
+    path('api/newsletter/', include('newsletter.urls')),
     path('api/', include('api.urls')),
 ]
 

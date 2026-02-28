@@ -4,14 +4,17 @@ from .models import Mosque, MosqueImage
 
 @admin.register(Mosque)
 class MosqueAdmin(admin.ModelAdmin):
-    list_display = ['name', 'city', 'address', 'phone', 'is_verified', 'is_active', 'capacity', 'created_at']
+    list_display = ['name', 'contact_person', 'city', 'phone', 'is_verified', 'is_active', 'capacity', 'created_at']
     list_filter = ['is_verified', 'is_active', 'has_parking', 'has_wudu_area', 'has_women_facility', 'has_jumuah', 'has_quran_classes', 'has_ramadan_iftar', 'city__country']
-    search_fields = ['name', 'address', 'city__name', 'phone', 'email']
+    search_fields = ['name', 'contact_person', 'address', 'city__name', 'phone', 'email']
     list_editable = ['is_verified', 'is_active']
     readonly_fields = ['created_at', 'updated_at']
     fieldsets = (
         ('Basic Information', {
-            'fields': ('name', 'city', 'address', 'phone', 'email', 'website')
+            'fields': ('name', 'contact_person', 'city', 'address', 'phone', 'email', 'website')
+        }),
+        ('Additional Information', {
+            'fields': ('additional_info',)
         }),
         ('Location', {
             'fields': ('latitude', 'longitude')
@@ -22,8 +25,13 @@ class MosqueAdmin(admin.ModelAdmin):
         ('Capacity', {
             'fields': ('capacity',)
         }),
-        ('Prayer Times (Jamaah)', {
-            'fields': ('fajr_jamaah', 'dhuhr_jamaah', 'asr_jamaah', 'maghrib_jamaah', 'isha_jamaah', 'jumuah_khutbah')
+        ('Prayer Times - Beginning (Azan/Start)', {
+            'fields': ('fajr_beginning', 'sunrise', 'dhuhr_beginning', 'asr_beginning', 'maghrib_sunset', 'isha_beginning'),
+            'description': 'Enter the beginning times for each prayer (when azan is called)'
+        }),
+        ('Prayer Times - Jamaah (Congregation)', {
+            'fields': ('fajr_jamaah', 'dhuhr_jamaah', 'asr_jamaah', 'maghrib_jamaah', 'isha_jamaah', 'jumuah_khutbah'),
+            'description': 'Enter the jamaah (congregation) times for each prayer'
         }),
         ('Status', {
             'fields': ('is_verified', 'is_active')

@@ -30,12 +30,16 @@ SECRET_KEY = env("SECRET_KEY", default="change-me-in-production-min-50-character
 DEBUG = env("DEBUG", default=False)
 PRODUCTION = not DEBUG
 
-# ALLOWED_HOSTS - Configure for production
-# Use environment variable, split by comma
+# ALLOWED_HOSTS
+# Read from environment, but force wide-open in DEBUG for local development
 ALLOWED_HOSTS = env.list(
-    "ALLOWED_HOSTS", 
-    default=["127.0.0.1", "localhost"]
+    "ALLOWED_HOSTS",
+    default=["127.0.0.1", "localhost", "[::1]"]
 )
+
+if DEBUG:
+    # For local/dev we accept all hosts to avoid DisallowedHost issues
+    ALLOWED_HOSTS = ["*"]
 
 # Security Middleware Settings
 SECURE_SSL_REDIRECT = env.bool("SECURE_SSL_REDIRECT", default=PRODUCTION)
@@ -84,6 +88,7 @@ INSTALLED_APPS = [
     "subscribe",
     "find_mosque",
     "push_notification",
+    "newsletter",
 ]
 
 MIDDLEWARE = [
@@ -109,10 +114,13 @@ ASGI_APPLICATION = "config.asgi.application"
 # CORS SETTINGS
 # ===================================================================
 
-# Configure CORS for production
+# Configure CORS
 CORS_ALLOWED_ORIGINS = env.list(
-    "CORS_ALLOWED_ORIGINS", 
-    default=["http://localhost:3000", "http://127.0.0.1:3000"]
+    "CORS_ALLOWED_ORIGINS",
+    default=[
+        "http://localhost:3000",
+        "http://127.0.0.1:3000",
+    ],
 )
 CORS_ALLOW_CREDENTIALS = env.bool("CORS_ALLOW_CREDENTIALS", default=True)
 
@@ -290,18 +298,8 @@ REDIS_URL = env("REDIS_URL", default="redis://localhost:6379")
 
 CACHES = {
     "default": {
-        "BACKEND": "django_redis.cache.RedisCache",
-        "LOCATION": f"{REDIS_URL}/1",
-        "OPTIONS": {
-            # Connection pool settings for better performance
-            "CONNECTION_POOL_KWARGS": {
-                "max_connections": 50,
-                "retry_on_timeout": True,
-            },
-            "SOCKET_CONNECT_TIMEOUT": 5,
-            "SOCKET_TIMEOUT": 5,
-        },
-        "KEY_PREFIX": "salahtime",
+        "BACKEND": "django.core.cache.backends.locmem.LocMemCache",
+        "LOCATION": "salahtime-local-cache",
         "TIMEOUT": 300,  # 5 minutes default
     }
 }
@@ -310,8 +308,8 @@ CACHES = {
 # CELERY CONFIGURATION
 # ===================================================================
 
-CELERY_BROKER_URL = f"{REDIS_URL}/0"
-CELERY_RESULT_BACKEND = f"{REDIS_URL}/0"
+CELERY_BROKER_URL = env("CELERY_BROKER_URL", default=None)
+CELERY_RESULT_BACKEND = env("CELERY_RESULT_BACKEND", default=None)
 CELERY_ACCEPT_CONTENT = ["json"]
 CELERY_TASK_SERIALIZER = "json"
 CELERY_RESULT_SERIALIZER = "json"
@@ -395,9 +393,9 @@ EMAIL_BACKEND = env(
 EMAIL_HOST = env("EMAIL_HOST", default="smtp.gmail.com")
 EMAIL_PORT = env.int("EMAIL_PORT", default=587)
 EMAIL_USE_TLS = env.bool("EMAIL_USE_TLS", default=True)
-EMAIL_HOST_USER = env("EMAIL_HOST_USER", default="")
+EMAIL_HOST_USER = env("EMAIL_HOST_USER", default="rasel.mamun314@gmail.com")
 EMAIL_HOST_PASSWORD = env("EMAIL_HOST_PASSWORD", default="")
-DEFAULT_FROM_EMAIL = env("DEFAULT_FROM_EMAIL", default="noreply@yourdomain.com")
+DEFAULT_FROM_EMAIL = env("DEFAULT_FROM_EMAIL", default="rasel.mamun314@gmail.com")
 
 # ===================================================================
 # ADMIN SETTINGS
@@ -411,6 +409,10 @@ ADMIN_URL = env("ADMIN_URL", default="admin/")
 
 # Prevent CORS from allowing all origins in production
 CORS_ORIGIN_ALLOW_ALL = env.bool("CORS_ORIGIN_ALLOW_ALL", default=False)
+
+# In DEBUG/local development, be permissive to avoid CORS headaches
+if DEBUG:
+    CORS_ORIGIN_ALLOW_ALL = True
 
 # ===================================================================
 # FILE UPLOAD SETTINGS

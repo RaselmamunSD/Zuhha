@@ -6,6 +6,11 @@ class Subscription(models.Model):
     """
     Model for email/notification subscriptions.
     """
+    NOTIFICATION_METHODS = [
+        ('whatsapp', 'WhatsApp'),
+        ('email', 'Email'),
+    ]
+
     SUBSCRIPTION_TYPES = [
         ('daily', 'Daily Prayer Times'),
         ('weekly', 'Weekly Summary'),
@@ -17,8 +22,13 @@ class Subscription(models.Model):
     user = models.ForeignKey(User, on_delete=models.CASCADE, related_name='subscriptions', null=True, blank=True)
     email = models.EmailField(unique=True)
     phone = models.CharField(max_length=20, blank=True)
+    notification_method = models.CharField(max_length=20, choices=NOTIFICATION_METHODS, default='whatsapp')
     subscription_type = models.CharField(max_length=20, choices=SUBSCRIPTION_TYPES, default='daily')
     city = models.ForeignKey('locations.City', on_delete=models.CASCADE, null=True, blank=True, related_name='subscriptions')
+    selected_mosques = models.ManyToManyField('find_mosque.Mosque', blank=True, related_name='subscriptions')
+    duration_days = models.PositiveSmallIntegerField(default=30)
+    notification_minutes_before = models.PositiveSmallIntegerField(default=10)
+    selected_prayers = models.JSONField(default=list)
     is_active = models.BooleanField(default=True)
     activation_token = models.CharField(max_length=100, blank=True)
     activated_at = models.DateTimeField(null=True, blank=True)

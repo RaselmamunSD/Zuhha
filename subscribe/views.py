@@ -35,6 +35,9 @@ class SubscriptionViewSet(viewsets.ModelViewSet):
         return Subscription.objects.all()
     
     def perform_create(self, serializer):
+        if self.request.user.is_authenticated:
+            serializer.save(user=self.request.user)
+            return
         serializer.save()
     
     @action(detail=False, methods=['post'])

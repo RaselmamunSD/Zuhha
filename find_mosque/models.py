@@ -6,8 +6,10 @@ class Mosque(models.Model):
     Model for mosque/masjid information.
     """
     name = models.CharField(max_length=200)
+    contact_person = models.CharField(max_length=120, blank=True)
     city = models.ForeignKey('locations.City', on_delete=models.CASCADE, related_name='mosques')
     address = models.TextField()
+    additional_info = models.TextField(blank=True)
     latitude = models.DecimalField(max_digits=9, decimal_places=6, null=True, blank=True)
     longitude = models.DecimalField(max_digits=9, decimal_places=6, null=True, blank=True)
     phone = models.CharField(max_length=20, blank=True)
@@ -25,13 +27,21 @@ class Mosque(models.Model):
     # Capacity
     capacity = models.IntegerField(default=0, help_text="Capacity of the main prayer hall")
     
-    # Timing
-    fajr_jamaah = models.TimeField(null=True, blank=True)
-    dhuhr_jamaah = models.TimeField(null=True, blank=True)
-    asr_jamaah = models.TimeField(null=True, blank=True)
-    maghrib_jamaah = models.TimeField(null=True, blank=True)
-    isha_jamaah = models.TimeField(null=True, blank=True)
-    jumuah_khutbah = models.TimeField(null=True, blank=True)
+    # Prayer Times - Beginning (Azan/Start Time)
+    fajr_beginning = models.TimeField(null=True, blank=True, help_text="Fajr beginning time")
+    sunrise = models.TimeField(null=True, blank=True, help_text="Sunrise time")
+    dhuhr_beginning = models.TimeField(null=True, blank=True, help_text="Dhuhr beginning time")
+    asr_beginning = models.TimeField(null=True, blank=True, help_text="Asr beginning time")
+    maghrib_sunset = models.TimeField(null=True, blank=True, help_text="Maghrib sunset time")
+    isha_beginning = models.TimeField(null=True, blank=True, help_text="Isha beginning time")
+    
+    # Prayer Times - Jamaah (Congregation Time)
+    fajr_jamaah = models.TimeField(null=True, blank=True, help_text="Fajr jamaah time")
+    dhuhr_jamaah = models.TimeField(null=True, blank=True, help_text="Dhuhr jamaah time")
+    asr_jamaah = models.TimeField(null=True, blank=True, help_text="Asr jamaah time")
+    maghrib_jamaah = models.TimeField(null=True, blank=True, help_text="Maghrib jamaah time")
+    isha_jamaah = models.TimeField(null=True, blank=True, help_text="Isha jamaah time")
+    jumuah_khutbah = models.TimeField(null=True, blank=True, help_text="Jumuah khutbah time")
     
     # Status
     is_verified = models.BooleanField(default=False)
