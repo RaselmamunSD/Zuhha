@@ -5,8 +5,14 @@ from rest_framework.permissions import IsAuthenticatedOrReadOnly, IsAuthenticate
 from django.db.models import Q
 from django.utils import timezone
 from datetime import datetime, timedelta
-from .models import Mosque, MosqueImage
-from .serializers import MosqueSerializer, MosqueListSerializer, MosqueImageSerializer, RegisterMosqueSerializer
+from .models import Mosque, MosqueImage, FavoriteMosque
+from .serializers import (
+    MosqueSerializer,
+    MosqueListSerializer,
+    MosqueImageSerializer,
+    RegisterMosqueSerializer,
+    FavoriteMosqueSerializer,
+)
 
 
 class MosqueViewSet(viewsets.ModelViewSet):
@@ -262,6 +268,49 @@ class MosqueViewSet(viewsets.ModelViewSet):
             'is_verified': mosque.is_verified,
             'is_active': mosque.is_active,
         }, status=status.HTTP_201_CREATED)
+
+    @action(detail=True, methods=['post', 'delete'], permission_classes=[IsAuthenticated])
+    def favorite(self, request, pk=None):
+        """Add or remove a mosque from user's favorites."""
+        mosque = self.get_object()
+
+        if request.method == 'POST':
+            favorite, created = FavoriteMosque.objects.get_or_create(
+                user=request.user,
+                mosque=mosque,
+            )
+            serializer = FavoriteMosqueSerializer(favorite, context={'request': request})
+            return Response(
+                {
+                    'detail': 'Mosque added to favorites.' if created else 'Mosque is already in favorites.',
+                    'favorite': serializer.data,
+                    'is_favorite': True,
+                },
+                status=status.HTTP_201_CREATED if created else status.HTTP_200_OK,
+            )
+
+        deleted_count, _ = FavoriteMosque.objects.filter(
+            user=request.user,
+            mosque=mosque,
+        ).delete()
+
+        if deleted_count == 0:
+            return Response({'detail': 'Mosque is not in favorites.'}, status=status.HTTP_404_NOT_FOUND)
+
+        return Response(
+            {
+                'detail': 'Mosque removed from favorites.',
+                'is_favorite': False,
+            },
+            status=status.HTTP_200_OK,
+        )
+
+    @action(detail=False, methods=['get'], permission_classes=[IsAuthenticated])
+    def favorites(self, request):
+        """Get current user's favorite mosques."""
+        favorites = FavoriteMosque.objects.filter(user=request.user).select_related('mosque', 'mosque__city', 'mosque__city__country')
+        serializer = FavoriteMosqueSerializer(favorites, many=True, context={'request': request})
+        return Response(serializer.data, status=status.HTTP_200_OK)
 
 
 class MosqueImageViewSet(viewsets.ModelViewSet):

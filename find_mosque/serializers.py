@@ -1,5 +1,5 @@
 from rest_framework import serializers
-from .models import Mosque, MosqueImage
+from .models import Mosque, MosqueImage, FavoriteMosque
 from locations.models import City, Country
 
 
@@ -132,4 +132,17 @@ class RegisterMosqueSerializer(serializers.Serializer):
             is_verified=False,
             is_active=True,
         )
+
+
+class FavoriteMosqueSerializer(serializers.ModelSerializer):
+    """Serializer for user's favorite mosques."""
+    mosque = MosqueListSerializer(read_only=True)
+    mosque_id = serializers.PrimaryKeyRelatedField(
+        source='mosque', queryset=Mosque.objects.all(), write_only=True, required=False
+    )
+
+    class Meta:
+        model = FavoriteMosque
+        fields = ['id', 'user', 'mosque', 'mosque_id', 'created_at']
+        read_only_fields = ['id', 'user', 'created_at', 'mosque']
 

@@ -19,6 +19,10 @@ from .serializers import (
     ForgotPasswordSerializer,
     ResetPasswordSerializer,
 )
+import logging
+
+
+logger = logging.getLogger(__name__)
 
 
 class AuthViewSet(viewsets.GenericViewSet):
@@ -71,6 +75,13 @@ class AuthViewSet(viewsets.GenericViewSet):
 
         email = serializer.validated_data["email"]
         user = User.objects.filter(email=email).first()
+        response_payload = {
+            "detail": "If an account exists with this email, a reset link has been sent.",
+            "reset_url": None,
+            "email_sent": None,
+            "email_backend": None,
+            "debug_error": None,
+        }
 
         # Always return success response to avoid email enumeration
         if user:
@@ -82,32 +93,45 @@ class AuthViewSet(viewsets.GenericViewSet):
             reset_path = f"/reset-password?uid={uid}&token={token}"
             reset_url = f"{frontend_base}{reset_path}"
 
-            subject = "Password Reset Request"
+            subject = "🔐 Password Reset Request - Salahtime"
             message = (
                 f"Assalamu Alaikum {user.get_full_name() or user.username},\n\n"
-                "We received a request to reset the password for your Salahtime account.\n\n"
-                f"Please click the link below (or copy and paste it into your browser) to set a new password:\n\n"
-                f"{reset_url}\n\n"
-                "This link will expire shortly for security reasons.\n\n"
-                "If you did not request a password reset, you can ignore this email.\n\n"
+                "We received a request to reset your Salahtime account password.\n\n"
+                "━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━\n"
+                "👇 Click this link to set your new password:\n\n"
+                f"{reset_url}\n"
+                "━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━\n\n"
+                "⏱ This link will expire in 1 hour for security reasons.\n\n"
+                "🚫 If you did not request a password reset, please ignore this email.\n\n"
                 "Jazakallahu Khair,\n"
                 f"{getattr(settings, 'SITE_NAME', 'Salahtime')} Team"
             )
 
+            email_sent = False
             try:
-                send_mail(
+                sent_count = send_mail(
                     subject,
                     message,
                     getattr(settings, "DEFAULT_FROM_EMAIL", "noreply@example.com"),
                     [email],
-                    fail_silently=True,
+                    fail_silently=False,
                 )
-            except Exception:
+                email_sent = sent_count > 0
+            except Exception as exc:
                 # We still return success so the user isn't blocked by email issues
-                pass
+                logger.exception("Password reset email sending failed for %s", email)
+                response_payload["debug_error"] = str(exc)
+
+            if getattr(settings, "DEBUG", False):
+                response_payload["reset_url"] = reset_url
+                response_payload["email_sent"] = email_sent
+                response_payload["email_backend"] = getattr(settings, "EMAIL_BACKEND", "")
+        elif getattr(settings, "DEBUG", False):
+            response_payload["email_sent"] = False
+            response_payload["email_backend"] = getattr(settings, "EMAIL_BACKEND", "")
 
         return Response(
-            {"detail": "If an account exists with this email, a reset link has been sent."},
+            response_payload,
             status=status.HTTP_200_OK,
         )
 

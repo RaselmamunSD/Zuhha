@@ -1,5 +1,5 @@
 from django.contrib import admin
-from .models import Mosque, MosqueImage
+from .models import Mosque, MosqueImage, FavoriteMosque
 
 
 @admin.register(Mosque)
@@ -49,4 +49,11 @@ class MosqueImageAdmin(admin.ModelAdmin):
     list_filter = ['is_primary', 'mosque__city__country']
     search_fields = ['mosque__name', 'caption']
     list_editable = ['is_primary', 'caption']
+
+
+@admin.register(FavoriteMosque)
+class FavoriteMosqueAdmin(admin.ModelAdmin):
+    list_display = ['user', 'mosque', 'created_at']
+    list_filter = ['created_at', 'mosque__city__country']
+    search_fields = ['user__username', 'user__email', 'mosque__name', 'mosque__city__name']
 

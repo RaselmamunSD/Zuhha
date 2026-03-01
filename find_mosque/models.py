@@ -1,4 +1,5 @@
 from django.db import models
+from django.contrib.auth.models import User
 
 
 class Mosque(models.Model):
@@ -75,3 +76,21 @@ class MosqueImage(models.Model):
 
     def __str__(self):
         return f"{self.mosque.name} - Image"
+
+
+class FavoriteMosque(models.Model):
+    """
+    Model to store user's favorite mosques.
+    """
+    user = models.ForeignKey(User, on_delete=models.CASCADE, related_name='favorite_mosques')
+    mosque = models.ForeignKey(Mosque, on_delete=models.CASCADE, related_name='favorited_by')
+    created_at = models.DateTimeField(auto_now_add=True)
+
+    class Meta:
+        ordering = ['-created_at']
+        unique_together = ('user', 'mosque')
+        verbose_name = 'Favorite Mosque'
+        verbose_name_plural = 'Favorite Mosques'
+
+    def __str__(self):
+        return f"{self.user.username} - {self.mosque.name}"

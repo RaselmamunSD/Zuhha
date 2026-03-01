@@ -46,3 +46,24 @@ class UserPreference(models.Model):
     def __str__(self):
         return f"Preferences for {self.user.user.username}"
 
+
+class SupportMessage(models.Model):
+    """
+    Stores contact form messages from support page.
+    """
+    name = models.CharField(max_length=120)
+    email = models.EmailField()
+    subject = models.CharField(max_length=200)
+    message = models.TextField()
+    is_resolved = models.BooleanField(default=False)
+    created_at = models.DateTimeField(auto_now_add=True)
+    updated_at = models.DateTimeField(auto_now=True)
+
+    class Meta:
+        ordering = ['-created_at']
+        verbose_name = 'Support Message'
+        verbose_name_plural = 'Support Messages'
+
+    def __str__(self):
+        return f"{self.subject} - {self.email}"
+

@@ -5,8 +5,8 @@ from rest_framework.response import Response
 from rest_framework import viewsets, permissions
 from prayer_times.models import PrayerTime
 from locations.models import City
-from .models import Location, UserPreference
-from .serializers import PrayerTimeSerializer, LocationSerializer, UserPreferenceSerializer
+from .models import Location, UserPreference, SupportMessage
+from .serializers import PrayerTimeSerializer, LocationSerializer, UserPreferenceSerializer, SupportMessageSerializer
 
 
 @api_view(['GET'])
@@ -44,3 +44,13 @@ class LocationViewSet(viewsets.ModelViewSet):
 class UserPreferenceViewSet(viewsets.ModelViewSet):
     queryset = UserPreference.objects.all()
     serializer_class = UserPreferenceSerializer
+
+
+class SupportMessageViewSet(viewsets.ModelViewSet):
+    queryset = SupportMessage.objects.all()
+    serializer_class = SupportMessageSerializer
+
+    def get_permissions(self):
+        if self.action == 'create':
+            return [permissions.AllowAny()]
+        return [permissions.IsAdminUser()]
