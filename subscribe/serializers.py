@@ -40,17 +40,21 @@ class SubscriptionSerializer(serializers.ModelSerializer):
 
 class SubscriptionCreateSerializer(serializers.ModelSerializer):
     """Serializer for creating subscriptions."""
-    email = serializers.EmailField(required=True)
+    email = serializers.EmailField(required=False, allow_blank=True)
     selected_mosques = serializers.PrimaryKeyRelatedField(
         queryset=Mosque.objects.filter(is_active=True), many=True, required=True
     )
 
     def validate(self, attrs):
         method = attrs.get('notification_method', 'whatsapp')
+        email = attrs.get('email', '').strip().lower()
         phone = attrs.get('phone', '').strip()
         selected_prayers = attrs.get('selected_prayers', [])
         duration_days = attrs.get('duration_days', 30)
         reminder_minutes = attrs.get('notification_minutes_before', 10)
+
+        if method == 'email' and not email:
+            raise serializers.ValidationError({'email': 'Email is required for email notifications.'})
 
         if method == 'whatsapp' and not phone:
             raise serializers.ValidationError({'phone': 'WhatsApp number is required for WhatsApp notifications.'})
@@ -121,17 +125,30 @@ class SubscriptionCreateSerializer(serializers.ModelSerializer):
         request = self.context.get('request')
         user = request.user if request and request.user.is_authenticated else None
         selected_mosques = validated_data.pop('selected_mosques', [])
+        method = validated_data.get('notification_method', 'whatsapp')
+
+        input_email = (validated_data.get('email') or '').strip().lower()
+        phone = (validated_data.get('phone') or '').strip()
+
+        resolved_email = input_email
+        if not resolved_email and method == 'whatsapp' and phone:
+            phone_digits = ''.join(ch for ch in phone if ch.isdigit())
+            if phone_digits:
+                resolved_email = f"whatsapp_{phone_digits}@notify.salahtime.local"
+
+        if not resolved_email:
+            raise serializers.ValidationError({'email': 'Email or valid WhatsApp number is required.'})
 
         # Generate activation token (in production, use proper token generation)
         import uuid
 
         subscription, created = Subscription.objects.get_or_create(
-            email=validated_data['email'],
+            email=resolved_email,
             defaults={
-                'phone': validated_data.get('phone', ''),
+                'phone': phone,
                 'subscription_type': validated_data.get('subscription_type', 'daily'),
                 'city': validated_data.get('city'),
-                'notification_method': validated_data.get('notification_method', 'whatsapp'),
+                'notification_method': method,
                 'duration_days': validated_data.get('duration_days', 30),
                 'notification_minutes_before': validated_data.get('notification_minutes_before', 10),
                 'selected_prayers': validated_data.get('selected_prayers', []),
@@ -141,10 +158,10 @@ class SubscriptionCreateSerializer(serializers.ModelSerializer):
         )
 
         if not created:
-            subscription.phone = validated_data.get('phone', subscription.phone)
+            subscription.phone = phone or subscription.phone
             subscription.subscription_type = validated_data.get('subscription_type', subscription.subscription_type)
             subscription.city = validated_data.get('city', subscription.city)
-            subscription.notification_method = validated_data.get('notification_method', subscription.notification_method)
+            subscription.notification_method = method
             subscription.duration_days = validated_data.get('duration_days', subscription.duration_days)
             subscription.notification_minutes_before = validated_data.get(
                 'notification_minutes_before', subscription.notification_minutes_before

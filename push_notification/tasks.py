@@ -10,7 +10,7 @@ logger = logging.getLogger(__name__)
 
 
 @shared_task(bind=True, max_retries=3)
-def send_whatsapp_notification(self, notification_id, message):
+def send_whatsapp_notification(self, notification_id, message, prayer_name=''):
     """
     Send WhatsApp notification to a subscriber.
     
@@ -27,6 +27,7 @@ def send_whatsapp_notification(self, notification_id, message):
         log = WhatsAppNotificationLog.objects.create(
             whatsapp=notification,
             message=message,
+            prayer_name=prayer_name,
             status='pending'
         )
         
@@ -48,8 +49,109 @@ def send_whatsapp_notification(self, notification_id, message):
         self.retry(exc=exc, countdown=60)
 
 
+def _is_notification_due(now_local, prayer_time, minutes_before):
+    prayer_datetime = timezone.make_aware(
+        timezone.datetime.combine(now_local.date(), prayer_time),
+        timezone.get_current_timezone()
+    )
+    due_datetime = prayer_datetime - timedelta(minutes=minutes_before)
+    return due_datetime.replace(second=0, microsecond=0) == now_local.replace(second=0, microsecond=0)
+
+
+def _already_sent_for_window(subscriber_id, prayer_name, window_start, window_end):
+    from push_notification.models import WhatsAppNotificationLog
+
+    return WhatsAppNotificationLog.objects.filter(
+        whatsapp_id=subscriber_id,
+        prayer_name=prayer_name,
+        sent_at__gte=window_start,
+        sent_at__lt=window_end,
+        status__in=['pending', 'sent', 'delivered', 'read']
+    ).exists()
+
+
 @shared_task(bind=True)
-def send_prayer_notification(self, prayer_name, city_id):
+def dispatch_due_prayer_notifications(self):
+    """
+    Dispatch prayer notifications that are due at current minute.
+
+    Runs every minute and respects each subscriber's
+    notification_minutes_before preference (10/20/30).
+    """
+    from push_notification.models import WhatsAppNotification
+    from prayer_times.models import MonthlyPrayerTime
+
+    now_local = timezone.localtime()
+    prayer_names = ['fajr', 'dhuhr', 'asr', 'maghrib', 'isha']
+
+    subscribers = WhatsAppNotification.objects.filter(
+        is_active=True,
+        city__isnull=False,
+    ).exclude(notification_types=[])
+
+    if not subscribers.exists():
+        return {'status': 'success', 'messages_queued': 0, 'reason': 'no_active_subscribers'}
+
+    city_ids = subscribers.values_list('city_id', flat=True).distinct()
+    prayer_time_map = {
+        pt.city_id: pt
+        for pt in MonthlyPrayerTime.objects.filter(
+            city_id__in=city_ids,
+            year=now_local.year,
+            month=now_local.month,
+            day=now_local.day,
+        )
+    }
+
+    messages_queued = 0
+    window_start = now_local.replace(second=0, microsecond=0)
+    window_end = window_start + timedelta(minutes=1)
+
+    for subscriber in subscribers:
+        if not subscriber.city_id:
+            continue
+
+        prayer_times = prayer_time_map.get(subscriber.city_id)
+        if not prayer_times:
+            continue
+
+        requested_prayers = [p for p in subscriber.notification_types if p in prayer_names]
+        if not requested_prayers:
+            continue
+
+        minutes_before = subscriber.notification_minutes_before or 10
+        if minutes_before not in [10, 20, 30]:
+            minutes_before = 10
+
+        for prayer_name in requested_prayers:
+            prayer_time_value = getattr(prayer_times, prayer_name, None)
+            if not prayer_time_value:
+                continue
+
+            if not _is_notification_due(now_local, prayer_time_value, minutes_before):
+                continue
+
+            if _already_sent_for_window(subscriber.id, prayer_name, window_start, window_end):
+                continue
+
+            message = prepare_prayer_message(
+                subscriber.language,
+                prayer_name,
+                prayer_time_value.strftime('%H:%M'),
+                minutes_before,
+            )
+            send_whatsapp_notification.delay(subscriber.id, message, prayer_name)
+            messages_queued += 1
+
+    return {
+        'status': 'success',
+        'checked_at': now_local.isoformat(),
+        'messages_queued': messages_queued,
+    }
+
+
+@shared_task(bind=True)
+def send_prayer_notification(self, prayer_name, city_id, minutes_before=None):
     """
     Send prayer time notifications to all subscribers for a specific city and prayer.
     
@@ -83,8 +185,10 @@ def send_prayer_notification(self, prayer_name, city_id):
     subscribers = WhatsAppNotification.objects.filter(
         city_id=city_id,
         is_active=True,
-        is_verified=True
     )
+
+    if minutes_before in [10, 20, 30]:
+        subscribers = subscribers.filter(notification_minutes_before=minutes_before)
     
     # Filter by notification type
     subscribers = subscribers.filter(
@@ -102,7 +206,7 @@ def send_prayer_notification(self, prayer_name, city_id):
         )
         
         # Queue the notification task
-        send_whatsapp_notification.delay(subscriber.id, message)
+        send_whatsapp_notification.delay(subscriber.id, message, prayer_name)
         messages_sent += 1
     
     return {
@@ -111,6 +215,213 @@ def send_prayer_notification(self, prayer_name, city_id):
         'city_id': city_id,
         'messages_queued': messages_sent
     }
+
+
+@shared_task(bind=True)
+def dispatch_subscription_notifications(self):
+    """
+    Dispatch notifications for all active subscriptions based on their
+    selected mosques and prayer preferences.
+
+    Runs every minute and respects each subscription's
+    notification_minutes_before preference (10/20/30).
+
+    Sends via WhatsApp or Email based on notification_method.
+    """
+    from subscribe.models import Subscription
+
+    now_local = timezone.localtime()
+    prayer_names = ['fajr', 'dhuhr', 'asr', 'maghrib', 'isha']
+
+    subscriptions = Subscription.objects.filter(
+        is_active=True,
+    ).prefetch_related('selected_mosques')
+
+    if not subscriptions.exists():
+        return {
+            'status': 'success',
+            'notifications_queued': 0,
+            'reason': 'no_active_subscriptions'
+        }
+
+    notifications_queued = 0
+    window_start = now_local.replace(second=0, microsecond=0)
+    window_end = window_start + timedelta(minutes=1)
+
+    for subscription in subscriptions:
+        mosques = subscription.selected_mosques.all()
+        if not mosques.exists():
+            continue
+
+        requested_prayers = subscription.selected_prayers or []
+        if not requested_prayers:
+            continue
+
+        minutes_before = subscription.notification_minutes_before or 10
+        if minutes_before not in [10, 20, 30]:
+            minutes_before = 10
+
+        for mosque in mosques:
+            for prayer_name in requested_prayers:
+                if prayer_name not in prayer_names:
+                    continue
+
+                prayer_time_value = getattr(mosque, f'{prayer_name}_beginning', None)
+                if not prayer_time_value:
+                    continue
+
+                if not _is_notification_due(now_local, prayer_time_value, minutes_before):
+                    continue
+
+                if _already_sent_for_subscription(
+                    subscription.id, mosque.id, prayer_name, window_start, window_end
+                ):
+                    continue
+
+                message = prepare_subscription_prayer_message(
+                    'en',
+                    prayer_name,
+                    prayer_time_value.strftime('%H:%M'),
+                    minutes_before,
+                    mosque.name
+                )
+
+                if subscription.notification_method == 'whatsapp' and subscription.phone:
+                    queue_whatsapp_for_subscription.delay(
+                        subscription.id, mosque.id, prayer_name, message
+                    )
+                elif subscription.notification_method == 'email' and subscription.email:
+                    queue_email_for_subscription.delay(
+                        subscription.id, mosque.id, prayer_name, message
+                    )
+
+                notifications_queued += 1
+
+    return {
+        'status': 'success',
+        'checked_at': now_local.isoformat(),
+        'notifications_queued': notifications_queued,
+    }
+
+
+def _already_sent_for_subscription(subscription_id, mosque_id, prayer_name, window_start, window_end):
+    """Check if notification already sent in the given time window."""
+    from subscribe.models import SubscriptionLog
+
+    return SubscriptionLog.objects.filter(
+        subscription_id=subscription_id,
+        prayer_name=prayer_name,
+        sent_at__gte=window_start,
+        sent_at__lt=window_end,
+        status__in=['sent', 'pending']
+    ).exists()
+
+
+@shared_task(bind=True, max_retries=3)
+def queue_whatsapp_for_subscription(self, subscription_id, mosque_id, prayer_name, message):
+    """Queue WhatsApp message for a subscription."""
+    from subscribe.models import Subscription, SubscriptionLog
+    from find_mosque.models import Mosque
+
+    try:
+        subscription = Subscription.objects.get(id=subscription_id)
+        mosque = Mosque.objects.get(id=mosque_id)
+
+        log = SubscriptionLog.objects.create(
+            subscription=subscription,
+            subject=f"{mosque.name} - {prayer_name.title()} Prayer",
+            message=message,
+            prayer_name=prayer_name,
+            status='pending'
+        )
+
+        logger.info(
+            f"Queuing WhatsApp to {subscription.phone} for {mosque.name} - {prayer_name}: {message}"
+        )
+
+        log.status = 'sent'
+        log.save()
+
+        return {'status': 'success', 'log_id': log.id}
+
+    except (Subscription.DoesNotExist, Mosque.DoesNotExist) as e:
+        logger.error(f"Subscription or Mosque not found: {e}")
+        return {'status': 'error', 'message': str(e)}
+    except Exception as exc:
+        logger.error(f"Error queueing WhatsApp: {exc}")
+        self.retry(exc=exc, countdown=60)
+
+
+@shared_task(bind=True, max_retries=3)
+def queue_email_for_subscription(self, subscription_id, mosque_id, prayer_name, message):
+    """Queue email message for a subscription."""
+    from subscribe.models import Subscription, SubscriptionLog
+    from find_mosque.models import Mosque
+    from django.core.mail import send_mail
+    from django.conf import settings
+
+    try:
+        subscription = Subscription.objects.get(id=subscription_id)
+        mosque = Mosque.objects.get(id=mosque_id)
+
+        subject = f"🕌 {mosque.name} - {prayer_name.title()} Prayer Alert"
+
+        log = SubscriptionLog.objects.create(
+            subscription=subscription,
+            subject=subject,
+            message=message,
+            prayer_name=prayer_name,
+            status='pending'
+        )
+
+        email_body = f"""Assalamu Alaikum,
+
+Prayer Alert from Salahtime:
+
+Mosque: {mosque.name}
+Prayer: {prayer_name.upper()}
+Time: {message.split('at ')[-1]}
+
+{message}
+
+May Allah accept from us.
+
+---
+Salahtime Team
+(salahtime.local)
+"""
+
+        try:
+            send_mail(
+                subject=subject,
+                message=email_body,
+                from_email=settings.DEFAULT_FROM_EMAIL,
+                recipient_list=[subscription.email],
+                fail_silently=False,
+            )
+            log.status = 'sent'
+        except Exception as email_exc:
+            logger.error(f"Failed to send email to {subscription.email}: {email_exc}")
+            log.status = 'failed'
+        finally:
+            log.save()
+
+        return {'status': 'success', 'log_id': log.id}
+
+    except (Subscription.DoesNotExist, Mosque.DoesNotExist) as e:
+        logger.error(f"Subscription or Mosque not found: {e}")
+        return {'status': 'error', 'message': str(e)}
+    except Exception as exc:
+        logger.error(f"Error queueing email: {exc}")
+        self.retry(exc=exc, countdown=60)
+
+
+def prepare_subscription_prayer_message(language, prayer_name, prayer_time, minutes_before, mosque_name=None):
+    """
+    Prepare localized prayer notification message for subscription.
+    """
+    mosque_suffix = f" at {mosque_name}" if mosque_name else ""
+    return f"🕋 {prayer_name.title()} prayer{mosque_suffix} in {minutes_before} minutes at {prayer_time}"
 
 
 @shared_task(bind=True)
@@ -142,7 +453,6 @@ def send_daily_summary(self, city_id):
     subscribers = WhatsAppNotification.objects.filter(
         city_id=city_id,
         is_active=True,
-        is_verified=True,
         notification_types__contains=['daily']
     )
     
@@ -215,7 +525,6 @@ def send_weekly_summary(self, city_id):
     subscribers = WhatsAppNotification.objects.filter(
         city_id=city_id,
         is_active=True,
-        is_verified=True,
         notification_types__contains=['weekly']
     )
     

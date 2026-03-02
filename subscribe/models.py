@@ -52,6 +52,7 @@ class SubscriptionLog(models.Model):
     subscription = models.ForeignKey(Subscription, on_delete=models.CASCADE, related_name='logs')
     subject = models.CharField(max_length=200)
     message = models.TextField()
+    prayer_name = models.CharField(max_length=20, blank=True, help_text="Prayer name (fajr, dhuhr, asr, maghrib, isha)")
     sent_at = models.DateTimeField(auto_now_add=True)
     status = models.CharField(max_length=20, choices=[
         ('pending', 'Pending'),

@@ -9,39 +9,16 @@ app = Celery('salahtime')
 
 # Configure beat schedule
 app.conf.beat_schedule = {
-    # Daily Fajr prayer notification (before Fajr)
-    'send-fajr-notification': {
-        'task': 'push_notification.tasks.send_prayer_notification',
-        'schedule': crontab(hour=4, minute=30),  # 4:30 AM UTC
-        'args': ('fajr', 1),  # city_id=1 (default)
+    # Run every minute and dispatch notifications due at that minute
+    'dispatch-due-prayer-notifications': {
+        'task': 'push_notification.tasks.dispatch_due_prayer_notifications',
+        'schedule': crontab(minute='*'),
     },
     
-    # Daily Dhuhr prayer notification
-    'send-dhuhr-notification': {
-        'task': 'push_notification.tasks.send_prayer_notification',
-        'schedule': crontab(hour=11, minute=30),  # 11:30 AM UTC
-        'args': ('dhuhr', 1),
-    },
-    
-    # Daily Asr prayer notification
-    'send-asr-notification': {
-        'task': 'push_notification.tasks.send_prayer_notification',
-        'schedule': crontab(hour=14, minute=30),  # 2:30 PM UTC
-        'args': ('asr', 1),
-    },
-    
-    # Daily Maghrib prayer notification
-    'send-maghrib-notification': {
-        'task': 'push_notification.tasks.send_prayer_notification',
-        'schedule': crontab(hour=17, minute=0),  # 5:00 PM UTC
-        'args': ('maghrib', 1),
-    },
-    
-    # Daily Isha prayer notification
-    'send-isha-notification': {
-        'task': 'push_notification.tasks.send_prayer_notification',
-        'schedule': crontab(hour=19, minute=30),  # 7:30 PM UTC
-        'args': ('isha', 1),
+    # Run every minute and dispatch subscription-based notifications
+    'dispatch-subscription-notifications': {
+        'task': 'push_notification.tasks.dispatch_subscription_notifications',
+        'schedule': crontab(minute='*'),
     },
     
     # Daily summary notification (evening)
