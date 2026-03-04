@@ -1,5 +1,11 @@
+import json
+import io
+import requests
+from PIL import Image
+
 from rest_framework import serializers
-from .models import Mosque, MosqueImage, FavoriteMosque
+from django.core.files.base import ContentFile
+from .models import Mosque, MosqueImage, FavoriteMosque, MosqueMonthlyPrayerTime
 from locations.models import City, Country
 
 
@@ -17,6 +23,7 @@ class MosqueSerializer(serializers.ModelSerializer):
     city_name = serializers.CharField(source='city.name', read_only=True)
     country_name = serializers.CharField(source='city.country.name', read_only=True)
     images = MosqueImageSerializer(many=True, read_only=True)
+    created_by = serializers.CharField(source='created_by.username', read_only=True)
     
     class Meta:
         model = Mosque
@@ -30,7 +37,7 @@ class MosqueSerializer(serializers.ModelSerializer):
             'maghrib_sunset', 'isha_beginning',
             'fajr_jamaah', 'dhuhr_jamaah', 'asr_jamaah',
             'maghrib_jamaah', 'isha_jamaah', 'jumuah_khutbah',
-            'is_verified', 'is_active', 'images',
+            'is_verified', 'is_active', 'created_by', 'images',
             'created_at', 'updated_at'
         ]
         read_only_fields = ['is_verified', 'created_at', 'updated_at']
@@ -63,15 +70,67 @@ class MosqueListSerializer(serializers.ModelSerializer):
 class RegisterMosqueSerializer(serializers.Serializer):
     mosque_name = serializers.CharField(max_length=200)
     contact_person = serializers.CharField(max_length=120, required=False, allow_blank=True)
-    email = serializers.EmailField(required=False, allow_blank=True)
+    email = serializers.CharField(max_length=254, required=False, allow_blank=True)  # Changed from EmailField to CharField for flexibility
     phone = serializers.CharField(max_length=20)
     address = serializers.CharField()
     area = serializers.CharField(max_length=100)
-    latitude = serializers.DecimalField(max_digits=9, decimal_places=6, required=False, allow_null=True)
-    longitude = serializers.DecimalField(max_digits=9, decimal_places=6, required=False, allow_null=True)
+    latitude = serializers.FloatField(required=False, allow_null=True)
+    longitude = serializers.FloatField(required=False, allow_null=True)
     facilities = serializers.ListField(child=serializers.CharField(), required=False)
     additional_info = serializers.CharField(required=False, allow_blank=True)
     prayer_times = serializers.DictField(required=False)
+    prayer_timetable_image = serializers.CharField(required=False, allow_null=True, allow_blank=True)
+
+    def validate_email(self, value):
+        """Validate email if provided."""
+        if value and '@' not in value:
+            raise serializers.ValidationError("Please provide a valid email address.")
+        return value
+
+    def validate_facilities(self, value):
+        if isinstance(value, str):
+            try:
+                parsed = json.loads(value)
+                if isinstance(parsed, list):
+                    return parsed
+            except (TypeError, json.JSONDecodeError):
+                return []
+            return []
+        return value
+
+    def validate_prayer_times(self, value):
+        if isinstance(value, str):
+            try:
+                parsed = json.loads(value)
+                if isinstance(parsed, dict):
+                    return parsed
+            except (TypeError, json.JSONDecodeError):
+                return {}
+            return {}
+        return value
+
+    def _download_image_from_url(self, image_url):
+        """Download image from URL and return a file-like object."""
+        try:
+            response = requests.get(image_url, timeout=10)
+            response.raise_for_status()
+            
+            # Validate that the response is an image
+            if 'image' not in response.headers.get('content-type', ''):
+                return None
+            
+            # Open the image to validate it's a proper image file
+            img = Image.open(io.BytesIO(response.content))
+            
+            # Get filename from URL or use a default
+            filename = image_url.split('/')[-1] or 'prayer_timetable.png'
+            
+            # Create a file-like object
+            img_file = ContentFile(response.content, name=filename)
+            return img_file
+        except Exception as e:
+            print(f"Error downloading image from URL: {e}")
+            return None
 
     def create(self, validated_data):
         country = Country.objects.filter(code='BGD').first() or Country.objects.filter(name__iexact='Bangladesh').first()
@@ -88,6 +147,11 @@ class RegisterMosqueSerializer(serializers.Serializer):
         latitude = validated_data.get('latitude')
         longitude = validated_data.get('longitude')
 
+        if latitude is not None:
+            latitude = round(float(latitude), 6)
+        if longitude is not None:
+            longitude = round(float(longitude), 6)
+
         city = City.objects.filter(name__iexact=area_name, country=country).first()
         if not city:
             city = City.objects.create(
@@ -100,13 +164,20 @@ class RegisterMosqueSerializer(serializers.Serializer):
 
         facilities = validated_data.get('facilities', [])
         prayer_times = validated_data.get('prayer_times', {})
+        prayer_timetable_image = validated_data.get('prayer_timetable_image')
 
         def time_or_none(value):
             return value if value not in ['', None] else None
 
-        return Mosque.objects.create(
+        request = self.context.get('request')
+        created_by = None
+        if request and request.user and request.user.is_authenticated and request.user.groups.filter(name='Imam').exists():
+            created_by = request.user
+
+        mosque = Mosque.objects.create(
             name=validated_data['mosque_name'],
             contact_person=validated_data.get('contact_person', ''),
+            created_by=created_by,
             city=city,
             address=validated_data['address'],
             additional_info=validated_data.get('additional_info', ''),
@@ -133,6 +204,27 @@ class RegisterMosqueSerializer(serializers.Serializer):
             is_active=True,
         )
 
+        if prayer_timetable_image:
+            image_file = None
+            
+            # Check if it's a string (URL) or a file object
+            if isinstance(prayer_timetable_image, str):
+                # It's a URL string, download it
+                image_file = self._download_image_from_url(prayer_timetable_image)
+            else:
+                # It's already a file object
+                image_file = prayer_timetable_image
+            
+            if image_file:
+                MosqueImage.objects.create(
+                    mosque=mosque,
+                    image=image_file,
+                    caption='Prayer timetable image',
+                    is_primary=True,
+                )
+
+        return mosque
+
 
 class FavoriteMosqueSerializer(serializers.ModelSerializer):
     """Serializer for user's favorite mosques."""
@@ -145,4 +237,93 @@ class FavoriteMosqueSerializer(serializers.ModelSerializer):
         model = FavoriteMosque
         fields = ['id', 'user', 'mosque', 'mosque_id', 'created_at']
         read_only_fields = ['id', 'user', 'created_at', 'mosque']
+
+
+class ImamMosqueUpsertSerializer(serializers.ModelSerializer):
+    primary_image_url = serializers.SerializerMethodField()
+
+    def get_primary_image_url(self, obj):
+        image = obj.images.filter(is_primary=True).first() or obj.images.first()
+        if not image:
+            return None
+        request = self.context.get('request')
+        if request:
+            return request.build_absolute_uri(image.image.url)
+        return image.image.url
+
+    class Meta:
+        model = Mosque
+        fields = [
+            'id',
+            'name',
+            'contact_person',
+            'city',
+            'address',
+            'additional_info',
+            'latitude',
+            'longitude',
+            'phone',
+            'email',
+            'website',
+            'has_parking',
+            'has_wudu_area',
+            'has_women_facility',
+            'has_jumuah',
+            'has_quran_classes',
+            'has_ramadan_iftar',
+            'capacity',
+            'fajr_beginning',
+            'sunrise',
+            'dhuhr_beginning',
+            'asr_beginning',
+            'maghrib_sunset',
+            'isha_beginning',
+            'fajr_jamaah',
+            'dhuhr_jamaah',
+            'asr_jamaah',
+            'maghrib_jamaah',
+            'isha_jamaah',
+            'jumuah_khutbah',
+            'is_active',
+            'primary_image_url',
+        ]
+
+
+class MosqueMonthlyPrayerTimeSerializer(serializers.ModelSerializer):
+    mosque_name = serializers.CharField(source='mosque.name', read_only=True)
+
+    class Meta:
+        model = MosqueMonthlyPrayerTime
+        fields = [
+            'id',
+            'mosque',
+            'mosque_name',
+            'year',
+            'month',
+            'day',
+            'fajr_adhan',
+            'fajr_iqamah',
+            'dhuhr_adhan',
+            'dhuhr_iqamah',
+            'asr_adhan',
+            'asr_iqamah',
+            'maghrib_adhan',
+            'maghrib_iqamah',
+            'isha_adhan',
+            'isha_iqamah',
+            'created_at',
+            'updated_at',
+        ]
+        read_only_fields = ['created_at', 'updated_at', 'mosque_name']
+        extra_kwargs = {
+            'mosque': {'required': False},
+            'year': {'required': False},
+            'month': {'required': False},
+        }
+
+
+class MosqueMonthlyPrayerTimeBulkSerializer(serializers.Serializer):
+    year = serializers.IntegerField(min_value=2020, max_value=2100)
+    month = serializers.IntegerField(min_value=1, max_value=12)
+    entries = MosqueMonthlyPrayerTimeSerializer(many=True)
 

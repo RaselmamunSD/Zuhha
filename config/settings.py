@@ -79,6 +79,7 @@ INSTALLED_APPS = [
     "django_celery_beat",
     # Third party
     "whitenoise",
+    "rest_framework_simplejwt.token_blacklist",  # JWT Token Blacklist
     # Local apps
     "api",
     "prayer_times",
@@ -396,6 +397,12 @@ EMAIL_USE_TLS = env.bool("EMAIL_USE_TLS", default=True)
 EMAIL_HOST_USER = env("EMAIL_HOST_USER", default="rasel.mamun314@gmail.com")
 EMAIL_HOST_PASSWORD = env("EMAIL_HOST_PASSWORD", default="")
 DEFAULT_FROM_EMAIL = env("DEFAULT_FROM_EMAIL", default="rasel.mamun314@gmail.com")
+
+# ===================================================================
+# FRONTEND CONFIGURATION
+# ===================================================================
+
+FRONTEND_BASE_URL = env("FRONTEND_BASE_URL", default="http://localhost:3000")
 
 # ===================================================================
 # ADMIN SETTINGS

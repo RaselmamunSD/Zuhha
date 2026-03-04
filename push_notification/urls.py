@@ -20,5 +20,6 @@ urlpatterns = [
     path('tasks/send_daily_summary/', send_daily_summary_view, name='send_daily_summary'),
     path('tasks/status/<str:task_id>/', task_status_view, name='task_status'),
     path('tasks/health/', celery_health_check, name='celery_health'),
+    
 ]
 

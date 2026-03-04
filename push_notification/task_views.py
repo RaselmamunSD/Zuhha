@@ -88,3 +88,4 @@ def celery_health_check(request):
         'registered_tasks': list(registered_tasks.keys()) if registered_tasks else []
     })
 
+# Note: The debug task can be defined in push_notification/tasks.py as follows:

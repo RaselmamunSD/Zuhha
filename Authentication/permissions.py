@@ -8,6 +8,14 @@ from rest_framework import permissions
 from rest_framework.permissions import BasePermission, IsAuthenticated, AllowAny
 
 
+def is_imam_user(user):
+    return bool(
+        user
+        and user.is_authenticated
+        and user.groups.filter(name="Imam").exists()
+    )
+
+
 class IsAuthenticatedOrReadOnly(permissions.BasePermission):
     """
     Custom permission to allow read-only access to unauthenticated users,
@@ -104,6 +112,15 @@ class IsStaffUser(permissions.BasePermission):
             return False
         
         return request.user.is_staff
+
+
+class IsImamUser(permissions.BasePermission):
+    """
+    Permission that allows only users in Imam group.
+    """
+
+    def has_permission(self, request, view):
+        return is_imam_user(request.user)
 
 
 class IsSuperUser(permissions.BasePermission):

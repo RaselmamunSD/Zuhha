@@ -40,16 +40,19 @@ class UserRegistrationSerializer(serializers.ModelSerializer):
 
 class LoginSerializer(serializers.Serializer):
     """Serializer for user login."""
-    email = serializers.EmailField()
+    email = serializers.CharField()
     password = serializers.CharField(write_only=True)
     
     def validate(self, data):
-        email = data.get('email')
+        identifier = data.get('email', '').strip()
         password = data.get('password')
         
-        if email and password:
-            # Find user by email - use filter().first() to handle duplicate emails
-            user = User.objects.filter(email=email).first()
+        if identifier and password:
+            # Allow login with either email or username
+            user = User.objects.filter(email__iexact=identifier).first()
+
+            if not user:
+                user = User.objects.filter(username__iexact=identifier).first()
             
             if not user:
                 raise serializers.ValidationError("Invalid email or password.")
@@ -85,25 +88,44 @@ class TokenRefreshSerializer(serializers.Serializer):
     refresh = serializers.CharField()
     
     def validate(self, data):
+        from rest_framework_simplejwt.exceptions import TokenError
+        
         try:
             refresh = RefreshToken(data['refresh'])
+            
+            # Create new tokens
+            data['tokens'] = {
+                'refresh': str(refresh),
+                'access': str(refresh.access_token),
+            }
+            
+            return data
+        except TokenError as e:
+            raise serializers.ValidationError({'refresh': f'Invalid or expired refresh token: {str(e)}'})
         except Exception as e:
-            raise serializers.ValidationError(str(e))
-        
-        data['tokens'] = {
-            'refresh': str(refresh),
-            'access': str(refresh.access_token),
-        }
-        return data
+            raise serializers.ValidationError({'refresh': f'Token refresh failed: {str(e)}'})
 
 
 class UserSerializer(serializers.ModelSerializer):
     """Serializer for user details."""
     profile_image = serializers.SerializerMethodField()
+    is_imam = serializers.SerializerMethodField()
+    user_type = serializers.SerializerMethodField()
     
     class Meta:
         model = User
-        fields = ['id', 'username', 'email', 'first_name', 'last_name', 'date_joined', 'is_staff', 'profile_image']
+        fields = [
+            'id',
+            'username',
+            'email',
+            'first_name',
+            'last_name',
+            'date_joined',
+            'is_staff',
+            'is_imam',
+            'user_type',
+            'profile_image',
+        ]
         read_only_fields = ['id', 'date_joined', 'is_staff']
     
     def get_profile_image(self, obj):
@@ -118,6 +140,12 @@ class UserSerializer(serializers.ModelSerializer):
         except Exception:
             pass
         return None
+
+    def get_is_imam(self, obj):
+        return obj.groups.filter(name='Imam').exists()
+
+    def get_user_type(self, obj):
+        return 'imam' if self.get_is_imam(obj) else 'user'
 
 
 class ChangePasswordSerializer(serializers.Serializer):

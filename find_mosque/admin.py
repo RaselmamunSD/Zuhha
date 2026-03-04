@@ -1,17 +1,17 @@
 from django.contrib import admin
-from .models import Mosque, MosqueImage, FavoriteMosque
+from .models import Mosque, MosqueImage, FavoriteMosque, MosqueMonthlyPrayerTime
 
 
 @admin.register(Mosque)
 class MosqueAdmin(admin.ModelAdmin):
-    list_display = ['name', 'contact_person', 'city', 'phone', 'is_verified', 'is_active', 'capacity', 'created_at']
+    list_display = ['name', 'created_by', 'contact_person', 'city', 'phone', 'is_verified', 'is_active', 'capacity', 'created_at']
     list_filter = ['is_verified', 'is_active', 'has_parking', 'has_wudu_area', 'has_women_facility', 'has_jumuah', 'has_quran_classes', 'has_ramadan_iftar', 'city__country']
     search_fields = ['name', 'contact_person', 'address', 'city__name', 'phone', 'email']
     list_editable = ['is_verified', 'is_active']
     readonly_fields = ['created_at', 'updated_at']
     fieldsets = (
         ('Basic Information', {
-            'fields': ('name', 'contact_person', 'city', 'address', 'phone', 'email', 'website')
+            'fields': ('name', 'created_by', 'contact_person', 'city', 'address', 'phone', 'email', 'website')
         }),
         ('Additional Information', {
             'fields': ('additional_info',)
@@ -56,4 +56,11 @@ class FavoriteMosqueAdmin(admin.ModelAdmin):
     list_display = ['user', 'mosque', 'created_at']
     list_filter = ['created_at', 'mosque__city__country']
     search_fields = ['user__username', 'user__email', 'mosque__name', 'mosque__city__name']
+
+
+@admin.register(MosqueMonthlyPrayerTime)
+class MosqueMonthlyPrayerTimeAdmin(admin.ModelAdmin):
+    list_display = ['mosque', 'year', 'month', 'day', 'fajr_adhan', 'fajr_iqamah', 'updated_at']
+    list_filter = ['year', 'month', 'mosque__city__country']
+    search_fields = ['mosque__name', 'mosque__city__name']
 

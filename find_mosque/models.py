@@ -8,6 +8,13 @@ class Mosque(models.Model):
     """
     name = models.CharField(max_length=200)
     contact_person = models.CharField(max_length=120, blank=True)
+    created_by = models.ForeignKey(
+        User,
+        on_delete=models.SET_NULL,
+        null=True,
+        blank=True,
+        related_name='managed_mosques'
+    )
     city = models.ForeignKey('locations.City', on_delete=models.CASCADE, related_name='mosques')
     address = models.TextField()
     additional_info = models.TextField(blank=True)
@@ -94,3 +101,41 @@ class FavoriteMosque(models.Model):
 
     def __str__(self):
         return f"{self.user.username} - {self.mosque.name}"
+
+
+class MosqueMonthlyPrayerTime(models.Model):
+    """
+    Monthly prayer timetable entries maintained by mosque/imam.
+    """
+
+    mosque = models.ForeignKey(
+        Mosque,
+        on_delete=models.CASCADE,
+        related_name='monthly_prayer_times'
+    )
+    year = models.PositiveIntegerField()
+    month = models.PositiveIntegerField()
+    day = models.PositiveIntegerField()
+
+    fajr_adhan = models.TimeField()
+    fajr_iqamah = models.TimeField()
+    dhuhr_adhan = models.TimeField()
+    dhuhr_iqamah = models.TimeField()
+    asr_adhan = models.TimeField()
+    asr_iqamah = models.TimeField()
+    maghrib_adhan = models.TimeField()
+    maghrib_iqamah = models.TimeField()
+    isha_adhan = models.TimeField()
+    isha_iqamah = models.TimeField()
+
+    created_at = models.DateTimeField(auto_now_add=True)
+    updated_at = models.DateTimeField(auto_now=True)
+
+    class Meta:
+        ordering = ['year', 'month', 'day']
+        unique_together = ('mosque', 'year', 'month', 'day')
+        verbose_name = 'Mosque Monthly Prayer Time'
+        verbose_name_plural = 'Mosque Monthly Prayer Times'
+
+    def __str__(self):
+        return f"{self.mosque.name} - {self.year}-{self.month:02d}-{self.day:02d}"

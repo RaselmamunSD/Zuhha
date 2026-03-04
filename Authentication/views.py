@@ -166,13 +166,24 @@ class AuthViewSet(viewsets.GenericViewSet):
     @action(detail=False, methods=['post'], permission_classes=[IsAuthenticated])
     def logout(self, request):
         """
-        User logout endpoint.
-        Note: JWT is stateless, so we just inform the client to discard the token.
-        For token blacklisting, configure SimpleJWT settings.
+        User logout endpoint - blacklists the refresh token.
         """
-        return Response({
-            'detail': 'Successfully logged out. Please discard your tokens.'
-        }, status=status.HTTP_200_OK)
+        try:
+            refresh_token = request.data.get('refresh')
+            if refresh_token:
+                token = RefreshToken(refresh_token)
+                token.blacklist()
+                return Response({
+                    'detail': 'Successfully logged out. Token has been blacklisted.'
+                }, status=status.HTTP_200_OK)
+            else:
+                return Response({
+                    'detail': 'Refresh token is required for logout.'
+                }, status=status.HTTP_400_BAD_REQUEST)
+        except Exception as e:
+            return Response({
+                'detail': f'Logout failed: {str(e)}'
+            }, status=status.HTTP_400_BAD_REQUEST)
     
     @action(detail=False, methods=['post'], permission_classes=[AllowAny])
     def refresh_token(self, request):
