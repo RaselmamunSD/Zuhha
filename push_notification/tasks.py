@@ -9,6 +9,33 @@ import logging
 logger = logging.getLogger(__name__)
 
 
+def _send_whatsapp_via_twilio(to_phone, message):
+    """
+    Send a WhatsApp message using Twilio API.
+    Returns (sid, error) tuple. error is None on success.
+    """
+    from django.conf import settings
+    account_sid = getattr(settings, 'TWILIO_ACCOUNT_SID', '')
+    auth_token = getattr(settings, 'TWILIO_AUTH_TOKEN', '')
+    from_number = getattr(settings, 'TWILIO_WHATSAPP_FROM', 'whatsapp:+14155238886')
+
+    if not account_sid or not auth_token or account_sid == 'your_account_sid_here':
+        logger.warning(f"[WhatsApp] Twilio not configured — logging only: {to_phone}: {message}")
+        return None, 'twilio_not_configured'
+
+    try:
+        from twilio.rest import Client
+        client = Client(account_sid, auth_token)
+        # Ensure to_phone has whatsapp: prefix
+        to_wa = to_phone if to_phone.startswith('whatsapp:') else f'whatsapp:{to_phone}'
+        msg = client.messages.create(body=message, from_=from_number, to=to_wa)
+        logger.info(f"[WhatsApp] Sent to {to_phone} — SID: {msg.sid}")
+        return msg.sid, None
+    except Exception as e:
+        logger.error(f"[WhatsApp] Twilio error for {to_phone}: {e}")
+        return None, str(e)
+
+
 def _enqueue_task(task, *args, **kwargs):
     """
     Enqueue a Celery task; fall back to local execution if broker is unavailable.
@@ -29,40 +56,38 @@ def _enqueue_task(task, *args, **kwargs):
 @shared_task(bind=True, max_retries=3)
 def send_whatsapp_notification(self, notification_id, message, prayer_name=''):
     """
-    Send WhatsApp notification to a subscriber.
-    
-    Args:
-        notification_id: ID of the WhatsAppNotification model
-        message: Message content to send
+    Send WhatsApp notification to a WhatsAppNotification subscriber via Twilio.
     """
     from push_notification.models import WhatsAppNotification, WhatsAppNotificationLog
-    
+
     try:
         notification = WhatsAppNotification.objects.get(id=notification_id)
-        
-        # Create log entry
+
         log = WhatsAppNotificationLog.objects.create(
             whatsapp=notification,
             message=message,
             prayer_name=prayer_name,
             status='pending'
         )
-        
-        # TODO: Integrate with Twilio or WhatsApp Business API
-        # For now, we'll simulate sending
-        logger.info(f"Sending WhatsApp to {notification.full_phone}: {message}")
-        
-        # Simulate successful send
-        log.status = 'sent'
+
+        sid, error = _send_whatsapp_via_twilio(notification.full_phone, message)
+
+        if error == 'twilio_not_configured':
+            log.status = 'sent'   # dev/no-config mode — treat as sent
+        elif error:
+            log.status = 'failed'
+        else:
+            log.status = 'sent'
+            log.twilio_sid = sid
+
         log.save()
-        
-        return {'status': 'success', 'log_id': log.id}
-        
+        return {'status': 'success' if not error else 'error', 'log_id': log.id}
+
     except WhatsAppNotification.DoesNotExist:
-        logger.error(f"Notification {notification_id} not found")
-        return {'status': 'error', 'message': 'Notification not found'}
+        logger.error(f"WhatsAppNotification {notification_id} not found")
+        return {'status': 'error', 'message': 'Not found'}
     except Exception as exc:
-        logger.error(f"Error sending notification: {exc}")
+        logger.error(f"send_whatsapp_notification error: {exc}")
         self.retry(exc=exc, countdown=60)
 
 
@@ -344,7 +369,7 @@ def _already_sent_for_subscription(subscription_id, mosque_id, prayer_name, wind
 
 @shared_task(bind=True, max_retries=3)
 def queue_whatsapp_for_subscription(self, subscription_id, mosque_id, prayer_name, message):
-    """Queue WhatsApp message for a subscription."""
+    """Send WhatsApp message for a Subscription via Twilio."""
     from subscribe.models import Subscription, SubscriptionLog
     from find_mosque.models import Mosque
 
@@ -360,20 +385,30 @@ def queue_whatsapp_for_subscription(self, subscription_id, mosque_id, prayer_nam
             status='pending'
         )
 
-        logger.info(
-            f"Queuing WhatsApp to {subscription.phone} for {mosque.name} - {prayer_name}: {message}"
-        )
+        # Format phone: ensure leading + for country code (e.g. +8801XXXXXXXXX)
+        phone = subscription.phone.strip()
+        if not phone.startswith('+'):
+            phone = '+' + phone
 
-        log.status = 'sent'
+        sid, error = _send_whatsapp_via_twilio(phone, message)
+
+        if error == 'twilio_not_configured':
+            log.status = 'sent'
+            logger.info(f"[WhatsApp-Sub] {phone} → {message}")
+        elif error:
+            log.status = 'failed'
+            logger.error(f"[WhatsApp-Sub] Failed to {phone}: {error}")
+        else:
+            log.status = 'sent'
+
         log.save()
-
-        return {'status': 'success', 'log_id': log.id}
+        return {'status': 'success' if not error else 'error', 'log_id': log.id}
 
     except (Subscription.DoesNotExist, Mosque.DoesNotExist) as e:
-        logger.error(f"Subscription or Mosque not found: {e}")
+        logger.error(f"queue_whatsapp_for_subscription: {e}")
         return {'status': 'error', 'message': str(e)}
     except Exception as exc:
-        logger.error(f"Error queueing WhatsApp: {exc}")
+        logger.error(f"queue_whatsapp_for_subscription error: {exc}")
         self.retry(exc=exc, countdown=60)
 
 
@@ -389,7 +424,14 @@ def queue_email_for_subscription(self, subscription_id, mosque_id, prayer_name, 
         subscription = Subscription.objects.get(id=subscription_id)
         mosque = Mosque.objects.get(id=mosque_id)
 
-        subject = f"🕌 {mosque.name} - {prayer_name.title()} Prayer Alert"
+        prayer_display = {
+            'fajr': 'Fajr (Dawn)', 'dhuhr': 'Dhuhr (Midday)', 'asr': 'Asr (Afternoon)',
+            'maghrib': 'Maghrib (Sunset)', 'isha': 'Isha (Night)', 'jumuah': "Jumu'ah (Friday)",
+        }.get(prayer_name.lower(), prayer_name.title())
+
+        # Extract time from message for subject
+        prayer_time_str = message.split('Time   : ')[-1].split('\n')[0].strip() if 'Time   :' in message else ''
+        subject = f"🕌 Prayer Reminder: {prayer_display} at {mosque.name} — {prayer_time_str}"
 
         log = SubscriptionLog.objects.create(
             subscription=subscription,
@@ -399,22 +441,12 @@ def queue_email_for_subscription(self, subscription_id, mosque_id, prayer_name, 
             status='pending'
         )
 
-        email_body = f"""Assalamu Alaikum,
-
-Prayer Alert from Salahtime:
-
-Mosque: {mosque.name}
-Prayer: {prayer_name.upper()}
-Time: {message.split('at ')[-1]}
-
-{message}
-
-May Allah accept from us.
-
----
-Salahtime Team
-(salahtime.local)
-"""
+        email_body = _build_email_body(
+            prayer_name,
+            prayer_time_str,
+            subscription.notification_minutes_before or 10,
+            mosque.name,
+        )
 
         try:
             send_mail(
@@ -425,8 +457,9 @@ Salahtime Team
                 fail_silently=False,
             )
             log.status = 'sent'
+            logger.info(f"[Email] Sent to {subscription.email} — {subject}")
         except Exception as email_exc:
-            logger.error(f"Failed to send email to {subscription.email}: {email_exc}")
+            logger.error(f"[Email] Failed to {subscription.email}: {email_exc}")
             log.status = 'failed'
         finally:
             log.save()
@@ -443,10 +476,78 @@ Salahtime Team
 
 def prepare_subscription_prayer_message(language, prayer_name, prayer_time, minutes_before, mosque_name=None):
     """
-    Prepare localized prayer notification message for subscription.
+    Prepare English prayer notification message for WhatsApp and Email.
     """
-    mosque_suffix = f" at {mosque_name}" if mosque_name else ""
-    return f"🕋 {prayer_name.title()} prayer{mosque_suffix} in {minutes_before} minutes at {prayer_time}"
+    prayer_display = {
+        'fajr': 'Fajr (Dawn)',
+        'dhuhr': 'Dhuhr (Midday)',
+        'asr': 'Asr (Afternoon)',
+        'maghrib': 'Maghrib (Sunset)',
+        'isha': 'Isha (Night)',
+        'jumuah': 'Jumu\'ah (Friday)',
+    }.get(prayer_name.lower(), prayer_name.title())
+
+    # Convert 24h to 12h AM/PM
+    try:
+        h, m = map(int, prayer_time.split(':'))
+        period = 'AM' if h < 12 else 'PM'
+        h12 = h % 12 or 12
+        time_display = f'{h12}:{m:02d} {period}'
+    except Exception:
+        time_display = prayer_time
+
+    mosque_line = f'\nMosque : {mosque_name}' if mosque_name else ''
+    # WhatsApp supports *bold* via asterisks
+    return (
+        f'🕌 *Prayer Reminder — Salahtime*\n'
+        f'\n'
+        f'Prayer : *{prayer_display}*{mosque_line}\n'
+        f'Time   : *{time_display}*\n'
+        f'Starting in *{minutes_before} minutes*\n'
+        f'\n'
+        f'May Allah accept your prayer. 🤲'
+    )
+
+
+def _build_email_body(prayer_name, prayer_time, minutes_before, mosque_name):
+    """Build a clean plain-text email body."""
+    prayer_display = {
+        'fajr': 'Fajr (Dawn)',
+        'dhuhr': 'Dhuhr (Midday)',
+        'asr': 'Asr (Afternoon)',
+        'maghrib': 'Maghrib (Sunset)',
+        'isha': 'Isha (Night)',
+        'jumuah': 'Jumu\'ah (Friday)',
+    }.get(prayer_name.lower(), prayer_name.title())
+
+    try:
+        h, m = map(int, prayer_time.split(':'))
+        period = 'AM' if h < 12 else 'PM'
+        h12 = h % 12 or 12
+        time_display = f'{h12}:{m:02d} {period}'
+    except Exception:
+        time_display = prayer_time
+
+    return f"""Assalamu Alaikum,
+
+This is your prayer reminder from Salahtime.
+
+{'=' * 40}
+  Prayer Reminder
+{'=' * 40}
+  Prayer  : {prayer_display}
+  Mosque  : {mosque_name}
+  Time    : {time_display}
+  Starts in {minutes_before} minutes
+{'=' * 40}
+
+Please prepare for prayer.
+May Allah accept from us. Ameen.
+
+---
+Salahtime — Prayer Time Notifications
+To unsubscribe, reply with STOP.
+"""
 
 
 @shared_task(bind=True)

@@ -136,6 +136,61 @@ class MosqueMonthlyPrayerTimeForm(forms.ModelForm):
         model = MosqueMonthlyPrayerTime
         fields = '__all__'
 
+
+# ─── Imam Mosque Form (city as plain text) ───────────────────────────────────
+
+_FIELD_STYLE = (
+    'width:100%;'
+    'padding:10px 14px;'
+    'border:1.5px solid #d1d5db;'
+    'border-radius:8px;'
+    'font-size:15px;'
+    'background:#ffffff;'
+    'box-sizing:border-box;'
+    'outline:none;'
+    'transition:border-color .2s;'
+)
+
+class ImamMosqueForm(forms.ModelForm):
+    """
+    Simplified form for Imam users.
+    'city' ForeignKey is replaced by a plain text field.
+    The actual City object is resolved in MosqueAdmin.save_model.
+    """
+    city_name = forms.CharField(
+        max_length=200,
+        label='City',
+        required=True,
+        widget=forms.TextInput(attrs={
+            'placeholder': 'শহরের নাম লিখুন (যেমন: Dhaka, London, New York)',
+            'style': _FIELD_STYLE,
+        }),
+        help_text='যেকোনো দেশের শহরের নাম লিখুন',
+    )
+
+    class Meta:
+        model = Mosque
+        fields = ['name', 'address']  # city handled via city_name in save_model
+        widgets = {
+            'name': forms.TextInput(attrs={
+                'placeholder': 'মসজিদের নাম লিখুন',
+                'style': _FIELD_STYLE,
+            }),
+            'address': forms.Textarea(attrs={
+                'placeholder': 'সম্পূর্ণ ঠিকানা লিখুন',
+                'rows': 4,
+                'style': _FIELD_STYLE + 'resize:vertical;',
+            }),
+        }
+
+    def __init__(self, *args, **kwargs):
+        super().__init__(*args, **kwargs)
+        # Pre-fill city_name when editing an existing mosque
+        if self.instance and self.instance.pk and self.instance.city_id:
+            self.fields['city_name'].initial = self.instance.city.name
+
+
+
 @admin.register(Mosque)
 class MosqueAdmin(ModelAdmin):
     PRAYER_TIME_FIELDS = (
@@ -157,6 +212,12 @@ class MosqueAdmin(ModelAdmin):
                 required=not db_field.null,
             )
         return super().formfield_for_dbfield(db_field, request, **kwargs)
+
+    def get_form(self, request, obj=None, **kwargs):
+        """Imam users get a simplified form with city as plain text input."""
+        if not request.user.is_superuser and request.user.groups.filter(name='Imam').exists():
+            return ImamMosqueForm
+        return super().get_form(request, obj, **kwargs)
 
     list_display = ['name', 'created_by', 'contact_person', 'city', 'phone', 'is_verified', 'is_active', 'capacity', 'created_at']
     list_filter = ['is_verified', 'is_active', 'has_parking', 'has_wudu_area', 'has_women_facility', 'has_jumuah', 'has_quran_classes', 'has_ramadan_iftar', 'city__country']
@@ -217,12 +278,13 @@ class MosqueAdmin(ModelAdmin):
             'fajr_jamaah', 'dhuhr_jamaah', 'asr_jamaah', 'maghrib_jamaah', 'isha_jamaah', 'jumuah_khutbah',
             'is_verified', 'is_active', 'created_at', 'updated_at',
         ]
-        # When adding a new mosque, only allow name/city/address
+        # When adding a new mosque, only allow name/city_name/address
         if obj is None:
-            basic_fields = ('name', 'city', 'address')
+            basic_fields = ('name', 'address')  # city handled via city_name text field
             return tuple(field for field in all_fields if field not in basic_fields)
-        # When editing, allow name/city/address + prayer times
-        return tuple(field for field in all_fields if field not in self.IMAM_EDITABLE_FIELDS)
+        # When editing, allow name/city_name/address + prayer times
+        imam_editable = [f for f in self.IMAM_EDITABLE_FIELDS if f != 'city']
+        return tuple(field for field in all_fields if field not in imam_editable)
 
     def get_fieldsets(self, request, obj=None):
         if request.user.is_superuser:
@@ -232,7 +294,7 @@ class MosqueAdmin(ModelAdmin):
         if obj is None:
             return (
                 ('Mosque Information', {
-                    'fields': ('name', 'city', 'address'),
+                    'fields': ('name', 'city_name', 'address'),
                     'description': 'Enter mosque name, area/district, and full address'
                 }),
             )
@@ -240,7 +302,7 @@ class MosqueAdmin(ModelAdmin):
         # EDIT form: basic info + prayer times
         return (
             ('Mosque Information', {
-                'fields': ('name', 'city', 'address'),
+                'fields': ('name', 'city_name', 'address'),
                 'description': 'Edit your mosque name, area/district, and full address'
             }),
             ('Prayer Times - Beginning (Azan/Start)', {
@@ -252,8 +314,27 @@ class MosqueAdmin(ModelAdmin):
         )
 
     def save_model(self, request, obj, form, change):
-        if not request.user.is_superuser and request.user.groups.filter(name='Imam').exists() and not obj.created_by_id:
-            obj.created_by = request.user
+        if not request.user.is_superuser and request.user.groups.filter(name='Imam').exists():
+            # Resolve city_name text → City object
+            city_name = form.cleaned_data.get('city_name', '').strip()
+            if city_name:
+                from locations.models import City, Country
+                city = City.objects.filter(name__iexact=city_name).first()
+                if not city:
+                    # Find or create a default country to attach the new city
+                    country = Country.objects.filter(is_active=True).first()
+                    if not country:
+                        country, _ = Country.objects.get_or_create(
+                            name='Bangladesh', defaults={'code': 'BGD'}
+                        )
+                    city, _ = City.objects.get_or_create(
+                        name=city_name,
+                        country=country,
+                        defaults={'latitude': 0, 'longitude': 0, 'timezone': 'UTC'},
+                    )
+                obj.city = city
+            if not obj.created_by_id:
+                obj.created_by = request.user
         super().save_model(request, obj, form, change)
 
     def get_list_editable(self, request):

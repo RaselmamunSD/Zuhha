@@ -409,12 +409,17 @@ Jazakallahu Khairan
             # Log error but don't fail the registration
             logger.exception("Failed to send registration notification email: %s", str(e))
 
+        # Include the admin WhatsApp number so the frontend can open wa.me directly
+        from api.models import SiteSettings
+        registration_whatsapp = SiteSettings.get().registration_whatsapp_number
+
         return Response({
             'message': 'Mosque registration submitted successfully. Awaiting admin approval.',
             'mosque_id': mosque.id,
             'is_verified': mosque.is_verified,
             'is_active': mosque.is_active,
             'prayer_timetable_image_url': image_url,
+            'registration_whatsapp': registration_whatsapp,
         }, status=status.HTTP_201_CREATED)
 
     @action(detail=False, methods=['get', 'post'], permission_classes=[IsAuthenticated], url_path='imam/my-mosques')

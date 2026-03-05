@@ -67,3 +67,29 @@ class SupportMessage(models.Model):
     def __str__(self):
         return f"{self.subject} - {self.email}"
 
+
+class SiteSettings(models.Model):
+    """
+    Singleton model for global site configuration.
+    Only one row (pk=1) is ever created.
+    """
+    registration_whatsapp_number = models.CharField(
+        max_length=30,
+        default='+8801738060329',
+        help_text='WhatsApp number that receives mosque registration requests. '
+                  'Include country code, e.g. +8801738060329',
+    )
+
+    class Meta:
+        verbose_name = 'Site Settings'
+        verbose_name_plural = 'Site Settings'
+
+    def __str__(self):
+        return 'Site Settings'
+
+    @classmethod
+    def get(cls):
+        """Always return the single settings object, creating it if needed."""
+        obj, _ = cls.objects.get_or_create(pk=1)
+        return obj
+

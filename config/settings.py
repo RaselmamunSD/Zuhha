@@ -310,17 +310,38 @@ CACHES = {
 # CELERY CONFIGURATION
 # ===================================================================
 
-CELERY_BROKER_URL = env("CELERY_BROKER_URL", default=None)
-CELERY_RESULT_BACKEND = env("CELERY_RESULT_BACKEND", default=None)
+CELERY_BROKER_URL = env("CELERY_BROKER_URL", default="redis://localhost:6379/0")
+CELERY_RESULT_BACKEND = env("CELERY_RESULT_BACKEND", default="redis://localhost:6379/0")
 CELERY_ACCEPT_CONTENT = ["json"]
 CELERY_TASK_SERIALIZER = "json"
 CELERY_RESULT_SERIALIZER = "json"
 CELERY_TIMEZONE = TIME_ZONE
 CELERY_BEAT_SCHEDULER = "django_celery_beat.schedulers:DatabaseScheduler"
+CELERY_BROKER_CONNECTION_RETRY_ON_STARTUP = True
 
 # Celery task settings
 CELERY_TASK_TRACK_STARTED = True
 CELERY_TASK_TIME_LIMIT = 30 * 60  # 30 minutes
+
+# Beat schedule — runs every minute to dispatch due prayer notifications
+from celery.schedules import crontab  # noqa: E402
+CELERY_BEAT_SCHEDULE = {
+    # Every minute: dispatch notifications for WhatsApp subscribers
+    'dispatch-due-prayer-notifications': {
+        'task': 'push_notification.tasks.dispatch_due_prayer_notifications',
+        'schedule': crontab(minute='*'),
+    },
+    # Every minute: dispatch notifications for Subscription (email/whatsapp)
+    'dispatch-subscription-notifications': {
+        'task': 'push_notification.tasks.dispatch_subscription_notifications',
+        'schedule': crontab(minute='*'),
+    },
+    # Cleanup old logs (daily at 2 AM)
+    'cleanup-old-logs': {
+        'task': 'push_notification.tasks.cleanup_old_notification_logs',
+        'schedule': crontab(hour=2, minute=0),
+    },
+}
 
 # ===================================================================
 # LOGGING - PRODUCTION CONFIGURATION
@@ -397,6 +418,15 @@ EMAIL_PORT = env.int("EMAIL_PORT", default=587)
 EMAIL_USE_TLS = env.bool("EMAIL_USE_TLS", default=True)
 EMAIL_HOST_USER = env("EMAIL_HOST_USER", default="rasel.mamun314@gmail.com")
 EMAIL_HOST_PASSWORD = env("EMAIL_HOST_PASSWORD", default="")
+DEFAULT_FROM_EMAIL = env("DEFAULT_FROM_EMAIL", default="rasel.mamun314@gmail.com")
+
+# ===================================================================
+# TWILIO WHATSAPP CONFIGURATION
+# ===================================================================
+
+TWILIO_ACCOUNT_SID = env("TWILIO_ACCOUNT_SID", default="")
+TWILIO_AUTH_TOKEN = env("TWILIO_AUTH_TOKEN", default="")
+TWILIO_WHATSAPP_FROM = env("TWILIO_WHATSAPP_FROM", default="whatsapp:+8801870966718")
 DEFAULT_FROM_EMAIL = env("DEFAULT_FROM_EMAIL", default="rasel.mamun314@gmail.com")
 
 # ===================================================================

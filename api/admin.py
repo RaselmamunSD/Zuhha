@@ -1,5 +1,5 @@
 from django.contrib import admin
-from .models import Location, UserPreference, SupportMessage
+from .models import Location, UserPreference, SupportMessage, SiteSettings
 from unfold.admin import ModelAdmin
 
 @admin.register(Location)
@@ -25,4 +25,22 @@ class SupportMessageAdmin(ModelAdmin):
     search_fields = ['name', 'email', 'subject', 'message']
     list_editable = ['is_resolved']
     readonly_fields = ['name', 'email', 'subject', 'message', 'created_at', 'updated_at']
+
+
+@admin.register(SiteSettings)
+class SiteSettingsAdmin(ModelAdmin):
+    fields = ['registration_whatsapp_number']
+    list_display = ['registration_whatsapp_number']
+    list_display_links = ['registration_whatsapp_number']
+
+    def has_add_permission(self, request):
+        return not SiteSettings.objects.exists()
+
+    def has_delete_permission(self, request, obj=None):
+        return False
+
+    def changelist_view(self, request, extra_context=None):
+        # Ensure the singleton always exists before showing the list
+        SiteSettings.get()
+        return super().changelist_view(request, extra_context)
 
