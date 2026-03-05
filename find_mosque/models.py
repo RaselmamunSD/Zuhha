@@ -119,6 +119,7 @@ class MosqueMonthlyPrayerTime(models.Model):
 
     fajr_adhan = models.TimeField()
     fajr_iqamah = models.TimeField()
+    sunrise = models.TimeField(null=True, blank=True)
     dhuhr_adhan = models.TimeField()
     dhuhr_iqamah = models.TimeField()
     asr_adhan = models.TimeField()

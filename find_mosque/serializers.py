@@ -5,8 +5,44 @@ from PIL import Image
 
 from rest_framework import serializers
 from django.core.files.base import ContentFile
+from django.conf import settings
 from .models import Mosque, MosqueImage, FavoriteMosque, MosqueMonthlyPrayerTime
 from locations.models import City, Country
+
+
+def build_image_url(request, image_url_path):
+    """
+    Build absolute URL for images using API_BASE_URL if available.
+    Falls back to request.build_absolute_uri() if API_BASE_URL is not set.
+    """
+    api_base_url = getattr(settings, 'API_BASE_URL', None)
+    if api_base_url:
+        image_path = image_url_path.lstrip('/')
+        return f"{api_base_url.rstrip('/')}/{image_path}"
+    else:
+        return request.build_absolute_uri(image_url_path)
+
+
+class FileOrURLField(serializers.Field):
+    """Custom field that accepts both file uploads and URL strings."""
+    
+    def to_internal_value(self, data):
+        # If it's a string (URL), return as is
+        if isinstance(data, str):
+            return data.strip() if data.strip() else None
+        
+        # If it's a file object, validate and return
+        if hasattr(data, 'read'):
+            return data
+        
+        # If it's None or empty, return None
+        if not data:
+            return None
+        
+        self.fail('invalid', value=data)
+    
+    def to_representation(self, value):
+        return value
 
 
 class MosqueImageSerializer(serializers.ModelSerializer):
@@ -52,18 +88,18 @@ class MosqueListSerializer(serializers.ModelSerializer):
     class Meta:
         model = Mosque
         fields = [
-            'id', 'name', 'city_name', 'country_name', 'address',
-            'latitude', 'longitude', 'has_jumuah', 'capacity',
+            'id', 'name', 'contact_person', 'city_name', 'country_name', 'address',
+            'phone', 'email', 'latitude', 'longitude', 'has_jumuah', 'capacity',
             'is_verified', 'primary_image'
         ]
     
     def get_primary_image(self, obj):
         primary = obj.images.filter(is_primary=True).first()
         if primary:
-            return self.context['request'].build_absolute_uri(primary.image.url)
+            return build_image_url(self.context['request'], primary.image.url)
         first_image = obj.images.first()
         if first_image:
-            return self.context['request'].build_absolute_uri(first_image.image.url)
+            return build_image_url(self.context['request'], first_image.image.url)
         return None
 
 
@@ -79,7 +115,7 @@ class RegisterMosqueSerializer(serializers.Serializer):
     facilities = serializers.ListField(child=serializers.CharField(), required=False)
     additional_info = serializers.CharField(required=False, allow_blank=True)
     prayer_times = serializers.DictField(required=False)
-    prayer_timetable_image = serializers.CharField(required=False, allow_null=True, allow_blank=True)
+    prayer_timetable_image = FileOrURLField(required=False, allow_null=True)
 
     def validate_email(self, value):
         """Validate email if provided."""
@@ -171,7 +207,7 @@ class RegisterMosqueSerializer(serializers.Serializer):
 
         request = self.context.get('request')
         created_by = None
-        if request and request.user and request.user.is_authenticated and request.user.groups.filter(name='Imam').exists():
+        if request and request.user and request.user.is_authenticated:
             created_by = request.user
 
         mosque = Mosque.objects.create(
@@ -248,7 +284,7 @@ class ImamMosqueUpsertSerializer(serializers.ModelSerializer):
             return None
         request = self.context.get('request')
         if request:
-            return request.build_absolute_uri(image.image.url)
+            return build_image_url(request, image.image.url)
         return image.image.url
 
     class Meta:
@@ -303,6 +339,7 @@ class MosqueMonthlyPrayerTimeSerializer(serializers.ModelSerializer):
             'day',
             'fajr_adhan',
             'fajr_iqamah',
+            'sunrise',
             'dhuhr_adhan',
             'dhuhr_iqamah',
             'asr_adhan',

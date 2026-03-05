@@ -1,9 +1,9 @@
 from django.contrib import admin
 from .models import WhatsAppNotification, WhatsAppNotificationLog
-
+from unfold.admin import ModelAdmin
 
 @admin.register(WhatsAppNotification)
-class WhatsAppNotificationAdmin(admin.ModelAdmin):
+class WhatsAppNotificationAdmin(ModelAdmin):
     list_display = ['phone_number', 'country_code', 'full_phone', 'user', 'city', 'language', 'is_active', 'is_verified', 'notification_minutes_before', 'created_at']
     list_filter = ['is_active', 'is_verified', 'language', 'city__country', 'notification_types']
     search_fields = ['phone_number', 'full_phone', 'user__username', 'user__email', 'admin_notes']
@@ -31,10 +31,16 @@ class WhatsAppNotificationAdmin(admin.ModelAdmin):
             'classes': ('collapse',)
         }),
     )
+    
+    def has_module_permission(self, request):
+        """Hide from Imam users."""
+        if request.user.is_superuser:
+            return True
+        return not request.user.groups.filter(name='Imam').exists()
 
 
 @admin.register(WhatsAppNotificationLog)
-class WhatsAppNotificationLogAdmin(admin.ModelAdmin):
+class WhatsAppNotificationLogAdmin(ModelAdmin):
     list_display = ['whatsapp', 'prayer_name', 'status', 'sent_at', 'delivered_at']
     list_filter = ['status', 'prayer_name', 'sent_at']
     search_fields = ['whatsapp__phone_number', 'twilio_sid', 'error_message']
@@ -45,4 +51,10 @@ class WhatsAppNotificationLogAdmin(admin.ModelAdmin):
     
     def has_change_permission(self, request, obj=None):
         return False
+    
+    def has_module_permission(self, request):
+        """Hide from Imam users."""
+        if request.user.is_superuser:
+            return True
+        return not request.user.groups.filter(name='Imam').exists()
 

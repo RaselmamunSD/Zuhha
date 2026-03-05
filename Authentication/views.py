@@ -7,6 +7,7 @@ from rest_framework_simplejwt.tokens import RefreshToken
 from django.contrib.auth.models import User
 from django.conf import settings
 from django.core.mail import send_mail
+from django.db.models import Q
 from django.utils.http import urlsafe_base64_encode
 from django.utils.encoding import force_bytes
 from django.contrib.auth.tokens import default_token_generator
@@ -18,6 +19,7 @@ from .serializers import (
     TokenRefreshSerializer,
     ForgotPasswordSerializer,
     ResetPasswordSerializer,
+    ImamCreateSerializer,
 )
 import logging
 
@@ -243,6 +245,44 @@ class AuthViewSet(viewsets.GenericViewSet):
         serializer.is_valid(raise_exception=True)
         serializer.save()
         return Response(UserSerializer(request.user, context={'request': request}).data, status=status.HTTP_200_OK)
+
+    @action(detail=False, methods=['post'], permission_classes=[IsAuthenticated])
+    def create_imam(self, request):
+        """
+        Create an Imam user (super-admin only).
+        """
+        if not request.user.is_superuser:
+            return Response({'detail': 'Only super admins can create Imam users.'}, status=status.HTTP_403_FORBIDDEN)
+
+        serializer = ImamCreateSerializer(data=request.data, context={'request': request})
+        serializer.is_valid(raise_exception=True)
+        imam_user = serializer.save()
+        
+        # Enable Django admin access
+        imam_user.is_staff = True
+        imam_user.save()
+        
+        # Grant mosque and monthly timetable permissions to Imam group
+        from django.contrib.contenttypes.models import ContentType
+        from django.contrib.auth.models import Permission, Group
+        from find_mosque.models import Mosque, MosqueMonthlyPrayerTime
+        
+        imam_group, _ = Group.objects.get_or_create(name="Imam")
+        mosque_ct = ContentType.objects.get_for_model(Mosque)
+        monthly_ct = ContentType.objects.get_for_model(MosqueMonthlyPrayerTime)
+        permissions = Permission.objects.filter(
+            Q(content_type=mosque_ct, codename__in=['view_mosque', 'change_mosque']) |
+            Q(content_type=monthly_ct, codename__in=['view_mosquemonthlyprayertime', 'add_mosquemonthlyprayertime', 'change_mosquemonthlyprayertime', 'delete_mosquemonthlyprayertime'])
+        )
+        imam_group.permissions.add(*permissions)
+
+        return Response(
+            {
+                'detail': 'Imam user created successfully with admin access.',
+                'user': UserSerializer(imam_user, context={'request': request}).data,
+            },
+            status=status.HTTP_201_CREATED,
+        )
     
     @action(detail=False, methods=['delete'], permission_classes=[IsAuthenticated])
     def delete_account(self, request):

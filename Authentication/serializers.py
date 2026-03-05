@@ -1,5 +1,6 @@
 from rest_framework import serializers
 from django.contrib.auth.models import User
+from django.contrib.auth.models import Group
 from django.contrib.auth import authenticate
 from django.utils import timezone
 from rest_framework_simplejwt.tokens import RefreshToken
@@ -216,5 +217,34 @@ class ResetPasswordSerializer(serializers.Serializer):
 
         data["user"] = user
         return data
+
+
+class ImamCreateSerializer(serializers.Serializer):
+    username = serializers.CharField(max_length=150)
+    email = serializers.EmailField(required=False, allow_blank=True)
+    first_name = serializers.CharField(max_length=150, required=False, allow_blank=True)
+    last_name = serializers.CharField(max_length=150, required=False, allow_blank=True)
+    password = serializers.CharField(write_only=True, min_length=8)
+    password_confirm = serializers.CharField(write_only=True, min_length=8)
+    is_active = serializers.BooleanField(required=False, default=True)
+
+    def validate_username(self, value):
+        if User.objects.filter(username__iexact=value).exists():
+            raise serializers.ValidationError("This username already exists.")
+        return value
+
+    def validate(self, data):
+        if data['password'] != data['password_confirm']:
+            raise serializers.ValidationError({'password_confirm': 'Passwords do not match.'})
+        return data
+
+    def create(self, validated_data):
+        validated_data.pop('password_confirm')
+        password = validated_data.pop('password')
+
+        user = User.objects.create_user(password=password, **validated_data)
+        imam_group, _ = Group.objects.get_or_create(name='Imam')
+        user.groups.add(imam_group)
+        return user
     
 

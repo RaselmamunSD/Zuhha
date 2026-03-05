@@ -7,6 +7,7 @@ from django.utils import timezone
 from django.core.mail import send_mail
 from django.conf import settings
 from datetime import datetime, timedelta
+import logging
 from .models import Mosque, MosqueImage, FavoriteMosque
 from Authentication.permissions import is_imam_user
 from .serializers import (
@@ -19,6 +20,30 @@ from .serializers import (
     MosqueMonthlyPrayerTimeSerializer,
     MosqueMonthlyPrayerTimeBulkSerializer,
 )
+
+
+def build_image_url(request, image_url_path):
+    """
+    Build absolute URL for images using API_BASE_URL if available.
+    Falls back to request.build_absolute_uri() if API_BASE_URL is not set.
+    
+    Args:
+        request: Django request object
+        image_url_path: Relative URL path to the image (e.g., from image.url)
+    
+    Returns:
+        Absolute URL string
+    """
+    api_base_url = getattr(settings, 'API_BASE_URL', None)
+    if api_base_url:
+        # Remove leading slash if present
+        image_path = image_url_path.lstrip('/')
+        return f"{api_base_url.rstrip('/')}/{image_path}"
+    else:
+        return request.build_absolute_uri(image_url_path)
+
+
+logger = logging.getLogger(__name__)
 
 
 class MosqueViewSet(viewsets.ModelViewSet):
@@ -317,13 +342,13 @@ class MosqueViewSet(viewsets.ModelViewSet):
         serializer = self.get_serializer(mosque)
         return Response(serializer.data)
 
-    @action(detail=False, methods=['post'], permission_classes=[AllowAny])
+    @action(detail=False, methods=['post'], permission_classes=[IsAuthenticated])
     def register(self, request):
         serializer = RegisterMosqueSerializer(data=request.data, context={'request': request})
         serializer.is_valid(raise_exception=True)
         mosque = serializer.save()
         primary_image = mosque.images.filter(is_primary=True).first() or mosque.images.first()
-        image_url = request.build_absolute_uri(primary_image.image.url) if primary_image else None
+        image_url = build_image_url(request, primary_image.image.url) if primary_image else None
 
         # Send email notification to super admin
         try:
@@ -355,10 +380,22 @@ Admin Panel: {settings.FRONTEND_BASE_URL}/admin/
 Jazakallahu Khairan
             """
             
-            # Get super admin emails
+            # Get super-admin/staff emails
             from django.contrib.auth import get_user_model
             User = get_user_model()
-            admin_emails = list(User.objects.filter(is_superuser=True, email__isnull=False).exclude(email='').values_list('email', flat=True))
+            admin_emails = list(
+                User.objects.filter(
+                    Q(is_superuser=True) | Q(is_staff=True),
+                    email__isnull=False,
+                )
+                .exclude(email='')
+                .values_list('email', flat=True)
+                .distinct()
+            )
+
+            api_base_url = getattr(settings, 'API_BASE_URL', '').rstrip('/')
+            admin_panel_url = f"{api_base_url}/admin/" if api_base_url else request.build_absolute_uri('/admin/')
+            message = message.replace(f"{settings.FRONTEND_BASE_URL}/admin/", admin_panel_url)
             
             if admin_emails:
                 send_mail(
@@ -366,11 +403,11 @@ Jazakallahu Khairan
                     message=message,
                     from_email=settings.DEFAULT_FROM_EMAIL,
                     recipient_list=admin_emails,
-                    fail_silently=True,
+                    fail_silently=False,
                 )
         except Exception as e:
             # Log error but don't fail the registration
-            print(f"Failed to send email notification: {str(e)}")
+            logger.exception("Failed to send registration notification email: %s", str(e))
 
         return Response({
             'message': 'Mosque registration submitted successfully. Awaiting admin approval.',

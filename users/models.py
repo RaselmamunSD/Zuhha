@@ -79,7 +79,8 @@ def create_user_profile(sender, instance, created, **kwargs):
 @receiver(post_save, sender=User)
 def save_user_profile(sender, instance, **kwargs):
     """Save the UserProfile instance when User is saved."""
-    instance.profile.save()
+    profile, _ = UserProfile.objects.get_or_create(user=instance)
+    profile.save()
 
 
 class UserLocation(models.Model):

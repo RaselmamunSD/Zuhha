@@ -2,7 +2,8 @@ from django import forms
 from django.contrib import admin
 from django.contrib.auth.models import Group, User
 from django.core.exceptions import ValidationError
-
+from django.db.models import Q
+from unfold.admin import ModelAdmin
 from .models import ImamUser
 
 
@@ -33,17 +34,33 @@ class ImamUserCreationForm(forms.ModelForm):
 			last_name=self.cleaned_data.get("last_name", ""),
 			email=self.cleaned_data.get("email", ""),
 			is_active=self.cleaned_data.get("is_active", True),
+			is_staff=True,  # Enable Django admin access for Imam
 		)
 		user.set_password(self.cleaned_data["password1"])
 		if commit:
 			user.save()
 			imam_group, _ = Group.objects.get_or_create(name="Imam")
 			user.groups.add(imam_group)
+			# Grant mosque and monthly timetable permissions to Imam
+			from django.contrib.contenttypes.models import ContentType
+			from django.contrib.auth.models import Permission
+			from find_mosque.models import Mosque, MosqueMonthlyPrayerTime
+			mosque_ct = ContentType.objects.get_for_model(Mosque)
+			monthly_ct = ContentType.objects.get_for_model(MosqueMonthlyPrayerTime)
+			permissions = Permission.objects.filter(
+				Q(content_type=mosque_ct, codename__in=['view_mosque', 'change_mosque']) |
+				Q(content_type=monthly_ct, codename__in=['view_mosquemonthlyprayertime', 'add_mosquemonthlyprayertime', 'change_mosquemonthlyprayertime', 'delete_mosquemonthlyprayertime'])
+			)
+			imam_group.permissions.add(*permissions)
 		return user
+
+	def save_m2m(self):
+		"""Handle M2M relations. Groups are assigned in save_model, so this is a no-op."""
+		pass
 
 
 @admin.register(ImamUser)
-class ImamUserAdmin(admin.ModelAdmin):
+class ImamUserAdmin(ModelAdmin):
 	add_form = ImamUserCreationForm
 	list_display = ["username", "first_name", "last_name", "email", "is_active", "last_login"]
 	list_filter = ["is_active", "is_staff", "is_superuser"]
@@ -81,3 +98,7 @@ class ImamUserAdmin(admin.ModelAdmin):
 		# Ensure the Imam group is assigned
 		imam_group, _ = Group.objects.get_or_create(name="Imam")
 		obj.groups.add(imam_group)
+	
+	def has_module_permission(self, request):
+		"""Only superusers can manage Imam users."""
+		return request.user.is_superuser

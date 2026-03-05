@@ -67,6 +67,7 @@ if PRODUCTION:
 # ===================================================================
 
 INSTALLED_APPS = [
+    "unfold",
     "django.contrib.admin",
     "corsheaders",
     "rest_framework.authtoken",
@@ -403,6 +404,7 @@ DEFAULT_FROM_EMAIL = env("DEFAULT_FROM_EMAIL", default="rasel.mamun314@gmail.com
 # ===================================================================
 
 FRONTEND_BASE_URL = env("FRONTEND_BASE_URL", default="http://localhost:3000")
+API_BASE_URL = env("API_BASE_URL", default="http://127.0.0.1:8000")
 
 # ===================================================================
 # ADMIN SETTINGS

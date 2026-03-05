@@ -1,10 +1,10 @@
 from django.contrib import admin
 from django.utils.html import format_html
 from .models import NewsletterSubscription, NewsletterLog
-
+from unfold.admin import ModelAdmin
 
 @admin.register(NewsletterSubscription)
-class NewsletterSubscriptionAdmin(admin.ModelAdmin):
+class NewsletterSubscriptionAdmin(ModelAdmin):
     list_display = ['email', 'is_active', 'is_verified', 'prayer_updates', 'important_announcements', 'subscribed_at']
     list_filter = ['is_active', 'is_verified', 'prayer_updates', 'important_announcements', 'subscribed_at']
     search_fields = ['email']
@@ -26,6 +26,12 @@ class NewsletterSubscriptionAdmin(admin.ModelAdmin):
         }),
     )
     ordering = ['-subscribed_at']
+    
+    def has_module_permission(self, request):
+        """Hide from Imam users."""
+        if request.user.is_superuser:
+            return True
+        return not request.user.groups.filter(name='Imam').exists()
 
     actions = ['mark_as_active', 'mark_as_inactive', 'mark_as_verified']
 
@@ -49,7 +55,7 @@ class NewsletterSubscriptionAdmin(admin.ModelAdmin):
 
 
 @admin.register(NewsletterLog)
-class NewsletterLogAdmin(admin.ModelAdmin):
+class NewsletterLogAdmin(ModelAdmin):
     list_display = ['subscription', 'subject', 'status', 'sent_at', 'created_at']
     list_filter = ['status', 'sent_at', 'created_at']
     search_fields = ['subscription__email', 'subject', 'message']
@@ -59,4 +65,10 @@ class NewsletterLogAdmin(admin.ModelAdmin):
     def has_add_permission(self, request):
         # Newsletter logs are created programmatically, not manually
         return False
+    
+    def has_module_permission(self, request):
+        """Hide from Imam users."""
+        if request.user.is_superuser:
+            return True
+        return not request.user.groups.filter(name='Imam').exists()
 

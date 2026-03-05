@@ -9,6 +9,23 @@ import logging
 logger = logging.getLogger(__name__)
 
 
+def _enqueue_task(task, *args, **kwargs):
+    """
+    Enqueue a Celery task; fall back to local execution if broker is unavailable.
+    """
+    try:
+        task.delay(*args, **kwargs)
+        return 'queued'
+    except Exception as exc:
+        logger.warning(
+            "Celery broker unavailable for task %s. Running inline. Error: %s",
+            getattr(task, 'name', str(task)),
+            exc,
+        )
+        task.apply(args=args, kwargs=kwargs)
+        return 'inline'
+
+
 @shared_task(bind=True, max_retries=3)
 def send_whatsapp_notification(self, notification_id, message, prayer_name=''):
     """
@@ -140,7 +157,7 @@ def dispatch_due_prayer_notifications(self):
                 prayer_time_value.strftime('%H:%M'),
                 minutes_before,
             )
-            send_whatsapp_notification.delay(subscriber.id, message, prayer_name)
+            _enqueue_task(send_whatsapp_notification, subscriber.id, message, prayer_name)
             messages_queued += 1
 
     return {
@@ -206,7 +223,7 @@ def send_prayer_notification(self, prayer_name, city_id, minutes_before=None):
         )
         
         # Queue the notification task
-        send_whatsapp_notification.delay(subscriber.id, message, prayer_name)
+        _enqueue_task(send_whatsapp_notification, subscriber.id, message, prayer_name)
         messages_sent += 1
     
     return {
@@ -287,12 +304,20 @@ def dispatch_subscription_notifications(self):
                 )
 
                 if subscription.notification_method == 'whatsapp' and subscription.phone:
-                    queue_whatsapp_for_subscription.delay(
-                        subscription.id, mosque.id, prayer_name, message
+                    _enqueue_task(
+                        queue_whatsapp_for_subscription,
+                        subscription.id,
+                        mosque.id,
+                        prayer_name,
+                        message,
                     )
                 elif subscription.notification_method == 'email' and subscription.email:
-                    queue_email_for_subscription.delay(
-                        subscription.id, mosque.id, prayer_name, message
+                    _enqueue_task(
+                        queue_email_for_subscription,
+                        subscription.id,
+                        mosque.id,
+                        prayer_name,
+                        message,
                     )
 
                 notifications_queued += 1
@@ -463,7 +488,7 @@ def send_daily_summary(self, city_id):
             prayer_times
         )
         
-        send_whatsapp_notification.delay(subscriber.id, message)
+        _enqueue_task(send_whatsapp_notification, subscriber.id, message)
         messages_sent += 1
     
     return {
@@ -535,7 +560,7 @@ def send_weekly_summary(self, city_id):
             prayer_times
         )
         
-        send_whatsapp_notification.delay(subscriber.id, message)
+        _enqueue_task(send_whatsapp_notification, subscriber.id, message)
         messages_sent += 1
     
     return {

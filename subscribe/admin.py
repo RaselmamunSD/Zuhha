@@ -3,7 +3,7 @@ from django.contrib import messages
 from django.utils.html import format_html
 from .models import Subscription, SubscriptionLog
 from push_notification.tasks import send_whatsapp_notification
-
+from unfold.admin import ModelAdmin
 
 def send_test_notification(modeladmin, request, queryset):
     """
@@ -79,7 +79,7 @@ send_test_notification.short_description = "📤 Send Test Notification"
 
 
 @admin.register(Subscription)
-class SubscriptionAdmin(admin.ModelAdmin):
+class SubscriptionAdmin(ModelAdmin):
     list_display = [
         'email', 'phone', 'notification_method', 'subscription_type', 'city',
         'duration_days', 'notification_minutes_before', 'is_active',
@@ -115,13 +115,25 @@ class SubscriptionAdmin(admin.ModelAdmin):
             'classes': ('collapse',)
         }),
     )
+    
+    def has_module_permission(self, request):
+        """Hide from Imam users."""
+        if request.user.is_superuser:
+            return True
+        return not request.user.groups.filter(name='Imam').exists()
 
 
 @admin.register(SubscriptionLog)
-class SubscriptionLogAdmin(admin.ModelAdmin):
+class SubscriptionLogAdmin(ModelAdmin):
     list_display = ['subscription', 'subject', 'status', 'sent_at']
     list_filter = ['status', 'sent_at']
     search_fields = ['subscription__email', 'subject', 'message']
     readonly_fields = ['sent_at']
     ordering = ['-sent_at']
+    
+    def has_module_permission(self, request):
+        """Hide from Imam users."""
+        if request.user.is_superuser:
+            return True
+        return not request.user.groups.filter(name='Imam').exists()
 
