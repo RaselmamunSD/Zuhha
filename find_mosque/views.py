@@ -4,7 +4,6 @@ from rest_framework.response import Response
 from rest_framework.permissions import IsAuthenticatedOrReadOnly, IsAuthenticated, AllowAny
 from django.db.models import Q
 from django.utils import timezone
-from django.core.mail import send_mail
 from django.conf import settings
 from datetime import datetime, timedelta
 import logging
@@ -350,64 +349,19 @@ class MosqueViewSet(viewsets.ModelViewSet):
         primary_image = mosque.images.filter(is_primary=True).first() or mosque.images.first()
         image_url = build_image_url(request, primary_image.image.url) if primary_image else None
 
-        # Send email notification to super admin
+        # Send email notification to super admin — run in background via Celery
+        # so the HTTP response returns immediately without waiting for SMTP.
         try:
-            subject = f"New Mosque Registration: {mosque.name}"
-            message = f"""
-Assalamu Alaikum,
-
-A new mosque has been registered and is awaiting your approval.
-
-Mosque Details:
----------------
-Name: {mosque.name}
-Contact Person: {mosque.contact_person or 'N/A'}
-Phone: {mosque.phone or 'N/A'}
-Email: {mosque.email or 'N/A'}
-Address: {mosque.address or 'N/A'}
-City: {mosque.city.name if mosque.city else 'N/A'}
-
-Additional Information:
-{mosque.additional_info or 'None provided'}
-
-Prayer Timetable Image:
-{image_url or 'Not uploaded'}
-
-Please review and approve this mosque registration.
-
-Admin Panel: {settings.FRONTEND_BASE_URL}/admin/
-
-Jazakallahu Khairan
-            """
-            
-            # Get super-admin/staff emails
-            from django.contrib.auth import get_user_model
-            User = get_user_model()
-            admin_emails = list(
-                User.objects.filter(
-                    Q(is_superuser=True) | Q(is_staff=True),
-                    email__isnull=False,
-                )
-                .exclude(email='')
-                .values_list('email', flat=True)
-                .distinct()
-            )
-
+            from push_notification.tasks import send_mosque_registration_email
             api_base_url = getattr(settings, 'API_BASE_URL', '').rstrip('/')
             admin_panel_url = f"{api_base_url}/admin/" if api_base_url else request.build_absolute_uri('/admin/')
-            message = message.replace(f"{settings.FRONTEND_BASE_URL}/admin/", admin_panel_url)
-            
-            if admin_emails:
-                send_mail(
-                    subject=subject,
-                    message=message,
-                    from_email=settings.DEFAULT_FROM_EMAIL,
-                    recipient_list=admin_emails,
-                    fail_silently=False,
-                )
+            send_mosque_registration_email.delay(
+                mosque_id=mosque.id,
+                image_url=image_url or '',
+                admin_panel_url=admin_panel_url,
+            )
         except Exception as e:
-            # Log error but don't fail the registration
-            logger.exception("Failed to send registration notification email: %s", str(e))
+            logger.exception("Failed to queue registration notification email: %s", str(e))
 
         # Include the admin WhatsApp number so the frontend can open wa.me directly
         from api.models import SiteSettings

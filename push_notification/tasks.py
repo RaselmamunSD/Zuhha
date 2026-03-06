@@ -600,6 +600,74 @@ def send_daily_summary(self, city_id):
 
 
 @shared_task
+def send_mosque_registration_email(mosque_id, image_url, admin_panel_url):
+    """
+    Send admin notification email after a new mosque registration.
+    Runs in the background so the HTTP response is not blocked by SMTP.
+    """
+    from django.core.mail import send_mail
+    from django.conf import settings
+    from django.db.models import Q
+    from django.contrib.auth import get_user_model
+    from find_mosque.models import Mosque
+
+    try:
+        mosque = Mosque.objects.select_related('city').get(pk=mosque_id)
+    except Mosque.DoesNotExist:
+        logger.error(f"[MosqueRegistration] Mosque {mosque_id} not found")
+        return
+
+    subject = f"New Mosque Registration: {mosque.name}"
+    message = f"""Assalamu Alaikum,
+
+A new mosque has been registered and is awaiting your approval.
+
+Mosque Details:
+---------------
+Name: {mosque.name}
+Contact Person: {mosque.contact_person or 'N/A'}
+Phone: {mosque.phone or 'N/A'}
+Email: {mosque.email or 'N/A'}
+Address: {mosque.address or 'N/A'}
+City: {mosque.city.name if mosque.city else 'N/A'}
+
+Additional Information:
+{mosque.additional_info or 'None provided'}
+
+Prayer Timetable Image:
+{image_url or 'Not uploaded'}
+
+Please review and approve this mosque registration.
+
+Admin Panel: {admin_panel_url}
+
+Jazakallahu Khairan"""
+
+    User = get_user_model()
+    admin_emails = list(
+        User.objects.filter(
+            Q(is_superuser=True) | Q(is_staff=True),
+            email__isnull=False,
+        )
+        .exclude(email='')
+        .values_list('email', flat=True)
+        .distinct()
+    )
+
+    if admin_emails:
+        send_mail(
+            subject=subject,
+            message=message,
+            from_email=settings.DEFAULT_FROM_EMAIL,
+            recipient_list=admin_emails,
+            fail_silently=False,
+        )
+        logger.info(f"[MosqueRegistration] Email sent to {admin_emails} for mosque '{mosque.name}'")
+    else:
+        logger.warning("[MosqueRegistration] No admin emails found — skipping notification")
+
+
+@shared_task
 def cleanup_old_notification_logs():
     """
     Cleanup old notification logs (older than 30 days).

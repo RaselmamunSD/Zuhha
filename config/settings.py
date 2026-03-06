@@ -44,6 +44,9 @@ if DEBUG:
 # Security Middleware Settings
 SECURE_SSL_REDIRECT = env.bool("SECURE_SSL_REDIRECT", default=PRODUCTION)
 SECURE_PROXY_SSL_HEADER = ("HTTP_X_FORWARDED_PROTO", "https")
+# Trust the X-Forwarded-Host header from reverse proxies / Cloudflare tunnels
+# so request.build_absolute_uri() returns the correct public URL
+USE_X_FORWARDED_HOST = True
 SESSION_COOKIE_SECURE = True
 CSRF_COOKIE_SECURE = True
 SECURE_HSTS_SECONDS = 31536000  # 1 year

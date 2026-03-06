@@ -162,10 +162,10 @@ class ImamMosqueForm(forms.ModelForm):
         label='City',
         required=True,
         widget=forms.TextInput(attrs={
-            'placeholder': 'শহরের নাম লিখুন (যেমন: Dhaka, London, New York)',
+            'placeholder': 'Enter the city name. (For example: Dhaka, London, New York)',
             'style': _FIELD_STYLE,
         }),
-        help_text='যেকোনো দেশের শহরের নাম লিখুন',
+        help_text='Enter the name of a city in any country.',
     )
 
     class Meta:
@@ -173,11 +173,11 @@ class ImamMosqueForm(forms.ModelForm):
         fields = ['name', 'address']  # city handled via city_name in save_model
         widgets = {
             'name': forms.TextInput(attrs={
-                'placeholder': 'মসজিদের নাম লিখুন',
+                'placeholder': 'Enter the mosque name.',
                 'style': _FIELD_STYLE,
             }),
             'address': forms.Textarea(attrs={
-                'placeholder': 'সম্পূর্ণ ঠিকানা লিখুন',
+                'placeholder': 'Enter the complete address.',
                 'rows': 4,
                 'style': _FIELD_STYLE + 'resize:vertical;',
             }),
