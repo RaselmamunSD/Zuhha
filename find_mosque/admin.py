@@ -537,7 +537,8 @@ class MosqueMonthlyPrayerTimeAdmin(ModelAdmin):
             fixed_mosque = None
         else:
             mosques = Mosque.objects.filter(created_by=request.user).order_by('name')
-            fixed_mosque = mosques.first()
+            # Show dropdown when Imam manages multiple mosques; fix only when exactly one
+            fixed_mosque = mosques.first() if mosques.count() == 1 else None
 
         # ── Parse mosque / year / month from GET or POST ───────────────────
         source = request.POST if request.method == 'POST' else request.GET
