@@ -7,7 +7,7 @@ from django.utils import timezone
 from django.conf import settings
 from datetime import datetime, timedelta
 import logging
-from .models import Mosque, MosqueImage, FavoriteMosque
+from .models import Mosque, MosqueImage, FavoriteMosque, MosqueAnnouncement
 from Authentication.permissions import is_imam_user
 from .serializers import (
     MosqueSerializer,
@@ -18,6 +18,7 @@ from .serializers import (
     ImamMosqueUpsertSerializer,
     MosqueMonthlyPrayerTimeSerializer,
     MosqueMonthlyPrayerTimeBulkSerializer,
+    MosqueAnnouncementSerializer,
 )
 
 
@@ -588,6 +589,53 @@ class MosqueViewSet(viewsets.ModelViewSet):
         """Get current user's favorite mosques."""
         favorites = FavoriteMosque.objects.filter(user=request.user).select_related('mosque', 'mosque__city', 'mosque__city__country')
         serializer = FavoriteMosqueSerializer(favorites, many=True, context={'request': request})
+        return Response(serializer.data, status=status.HTTP_200_OK)
+
+    # ── Announcements ──────────────────────────────────────────────────────
+
+    @action(detail=True, methods=['get'], permission_classes=[AllowAny], url_path='announcements')
+    def announcements(self, request, pk=None):
+        """Public: list active announcements for a mosque."""
+        mosque = self.get_object()
+        qs = mosque.announcements.filter(is_active=True)
+        serializer = MosqueAnnouncementSerializer(qs, many=True)
+        return Response(serializer.data, status=status.HTTP_200_OK)
+
+    @action(detail=True, methods=['post'], permission_classes=[IsAuthenticated], url_path='imam/announcements')
+    def imam_create_announcement(self, request, pk=None):
+        """Imam/admin: create an announcement for their mosque."""
+        if not is_imam_user(request.user) and not request.user.is_superuser:
+            return Response({'detail': 'Only Imam users can manage announcements.'}, status=status.HTTP_403_FORBIDDEN)
+        mosque = self.get_object()
+        if not request.user.is_superuser and mosque.created_by_id != request.user.id:
+            return Response({'detail': 'You can only post announcements for your own mosque.'}, status=status.HTTP_403_FORBIDDEN)
+        serializer = MosqueAnnouncementSerializer(data={**request.data, 'mosque': mosque.pk})
+        serializer.is_valid(raise_exception=True)
+        serializer.save(mosque=mosque, created_by=request.user)
+        return Response(serializer.data, status=status.HTTP_201_CREATED)
+
+    @action(detail=True, methods=['put', 'patch', 'delete'], permission_classes=[IsAuthenticated],
+            url_path=r'imam/announcements/(?P<ann_pk>[0-9]+)')
+    def imam_manage_announcement(self, request, pk=None, ann_pk=None):
+        """Imam/admin: update or delete a specific announcement."""
+        if not is_imam_user(request.user) and not request.user.is_superuser:
+            return Response({'detail': 'Only Imam users can manage announcements.'}, status=status.HTTP_403_FORBIDDEN)
+        mosque = self.get_object()
+        if not request.user.is_superuser and mosque.created_by_id != request.user.id:
+            return Response({'detail': 'You can only manage announcements for your own mosque.'}, status=status.HTTP_403_FORBIDDEN)
+        try:
+            announcement = mosque.announcements.get(pk=ann_pk)
+        except MosqueAnnouncement.DoesNotExist:
+            return Response({'detail': 'Announcement not found.'}, status=status.HTTP_404_NOT_FOUND)
+        if request.method == 'DELETE':
+            announcement.delete()
+            return Response(status=status.HTTP_204_NO_CONTENT)
+        serializer = MosqueAnnouncementSerializer(
+            announcement, data=request.data,
+            partial=request.method == 'PATCH'
+        )
+        serializer.is_valid(raise_exception=True)
+        serializer.save()
         return Response(serializer.data, status=status.HTTP_200_OK)
 
 

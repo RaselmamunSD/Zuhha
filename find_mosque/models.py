@@ -140,3 +140,34 @@ class MosqueMonthlyPrayerTime(models.Model):
 
     def __str__(self):
         return f"{self.mosque.name} - {self.year}-{self.month:02d}-{self.day:02d}"
+
+
+class MosqueAnnouncement(models.Model):
+    """
+    Announcements posted by Imam or admin for a specific mosque.
+    """
+    mosque = models.ForeignKey(
+        Mosque,
+        on_delete=models.CASCADE,
+        related_name='announcements'
+    )
+    title = models.CharField(max_length=200)
+    body = models.TextField()
+    is_active = models.BooleanField(default=True)
+    created_by = models.ForeignKey(
+        User,
+        on_delete=models.SET_NULL,
+        null=True,
+        blank=True,
+        related_name='mosque_announcements'
+    )
+    created_at = models.DateTimeField(auto_now_add=True)
+    updated_at = models.DateTimeField(auto_now=True)
+
+    class Meta:
+        ordering = ['-created_at']
+        verbose_name = 'Mosque Announcement'
+        verbose_name_plural = 'Mosque Announcements'
+
+    def __str__(self):
+        return f"{self.mosque.name} — {self.title}"

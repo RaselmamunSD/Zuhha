@@ -6,7 +6,7 @@ from PIL import Image
 from rest_framework import serializers
 from django.core.files.base import ContentFile
 from django.conf import settings
-from .models import Mosque, MosqueImage, FavoriteMosque, MosqueMonthlyPrayerTime
+from .models import Mosque, MosqueImage, FavoriteMosque, MosqueMonthlyPrayerTime, MosqueAnnouncement
 from locations.models import City, Country
 
 
@@ -43,6 +43,16 @@ class FileOrURLField(serializers.Field):
     
     def to_representation(self, value):
         return value
+
+
+class MosqueAnnouncementSerializer(serializers.ModelSerializer):
+    """Serializer for MosqueAnnouncement model."""
+    created_by_name = serializers.CharField(source='created_by.username', read_only=True)
+
+    class Meta:
+        model = MosqueAnnouncement
+        fields = ['id', 'mosque', 'title', 'body', 'is_active', 'created_by_name', 'created_at', 'updated_at']
+        read_only_fields = ['created_at', 'updated_at']
 
 
 class MosqueImageSerializer(serializers.ModelSerializer):

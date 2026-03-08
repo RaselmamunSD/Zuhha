@@ -2,7 +2,7 @@ from django.contrib import admin
 from django import forms
 from django.db import models as db_models
 from datetime import time as dt_time
-from .models import Mosque, MosqueImage, FavoriteMosque, MosqueMonthlyPrayerTime
+from .models import Mosque, MosqueImage, FavoriteMosque, MosqueMonthlyPrayerTime, MosqueAnnouncement
 from unfold.admin import ModelAdmin
 
 
@@ -705,4 +705,68 @@ class MosqueMonthlyPrayerTimeAdmin(ModelAdmin):
             'opts': self.model._meta,
         }
         return render(request, 'admin/find_mosque/mosquemonthlyprayertime/bulk_add.html', context)
+
+
+@admin.register(MosqueAnnouncement)
+class MosqueAnnouncementAdmin(ModelAdmin):
+    list_display  = ['mosque', 'title', 'is_active', 'created_by', 'created_at']
+    list_filter   = ['is_active', 'mosque']
+    search_fields = ['mosque__name', 'title', 'body']
+    list_editable = ['is_active']
+    readonly_fields = ['created_by', 'created_at', 'updated_at']
+
+    def get_queryset(self, request):
+        qs = super().get_queryset(request)
+        if request.user.is_superuser:
+            return qs
+        return qs.filter(mosque__created_by=request.user)
+
+    def has_module_permission(self, request):
+        if request.user.is_superuser:
+            return True
+        return request.user.groups.filter(name='Imam').exists()
+
+    def has_view_permission(self, request, obj=None):
+        if request.user.is_superuser:
+            return True
+        if not request.user.groups.filter(name='Imam').exists():
+            return False
+        if obj is None:
+            return True
+        return obj.mosque.created_by_id == request.user.id
+
+    def has_add_permission(self, request):
+        if request.user.is_superuser:
+            return True
+        return request.user.groups.filter(name='Imam').exists()
+
+    def has_change_permission(self, request, obj=None):
+        if request.user.is_superuser:
+            return True
+        if not request.user.groups.filter(name='Imam').exists():
+            return False
+        if obj is None:
+            return True
+        return obj.mosque.created_by_id == request.user.id
+
+    def has_delete_permission(self, request, obj=None):
+        if request.user.is_superuser:
+            return True
+        if not request.user.groups.filter(name='Imam').exists():
+            return False
+        if obj is None:
+            return True
+        return obj.mosque.created_by_id == request.user.id
+
+    def formfield_for_foreignkey(self, db_field, request, **kwargs):
+        """Imams can only pick their own mosques."""
+        if db_field.name == 'mosque' and not request.user.is_superuser:
+            if request.user.groups.filter(name='Imam').exists():
+                kwargs['queryset'] = Mosque.objects.filter(created_by=request.user)
+        return super().formfield_for_foreignkey(db_field, request, **kwargs)
+
+    def save_model(self, request, obj, form, change):
+        if not obj.created_by_id:
+            obj.created_by = request.user
+        super().save_model(request, obj, form, change)
 
