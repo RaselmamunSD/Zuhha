@@ -215,73 +215,110 @@ class MosqueViewSet(viewsets.ModelViewSet):
     
     @action(detail=True, methods=['get'])
     def prayer_times(self, request, pk=None):
-        """Get today's prayer times for a specific mosque with next prayer calculation."""
+        """Get today's prayer times for a specific mosque with next prayer calculation.
+
+        Priority: monthly timetable data for today → fallback to static mosque fields.
+        """
         mosque = self.get_object()
         
-        # Get current time
-        now = timezone.now()
+        # Get current time in local timezone
+        now = timezone.localtime(timezone.now())
         current_time = now.time()
         current_date = now.date()
+
+        # ── Try today's monthly timetable entry first ──────────────────────
+        monthly = mosque.monthly_prayer_times.filter(
+            year=current_date.year,
+            month=current_date.month,
+            day=current_date.day,
+        ).first()
+
+        # ── Resolve per-prayer times (adhan/iqamah) ────────────────────────
+        if monthly:
+            fajr_adhan    = monthly.fajr_adhan
+            fajr_iqamah   = monthly.fajr_iqamah
+            sunrise       = monthly.sunrise
+            dhuhr_adhan   = monthly.dhuhr_adhan
+            dhuhr_iqamah  = monthly.dhuhr_iqamah
+            asr_adhan     = monthly.asr_adhan
+            asr_iqamah    = monthly.asr_iqamah
+            maghrib_adhan = monthly.maghrib_adhan
+            maghrib_iqamah = monthly.maghrib_iqamah
+            isha_adhan    = monthly.isha_adhan
+            isha_iqamah   = monthly.isha_iqamah
+        else:
+            # Fall back to static mosque fields
+            fajr_adhan    = mosque.fajr_beginning
+            fajr_iqamah   = mosque.fajr_jamaah
+            sunrise       = mosque.sunrise
+            dhuhr_adhan   = mosque.dhuhr_beginning
+            dhuhr_iqamah  = mosque.dhuhr_jamaah
+            asr_adhan     = mosque.asr_beginning
+            asr_iqamah    = mosque.asr_jamaah
+            maghrib_adhan = mosque.maghrib_sunset
+            maghrib_iqamah = mosque.maghrib_jamaah
+            isha_adhan    = mosque.isha_beginning
+            isha_iqamah   = mosque.isha_jamaah
         
         # Prayer times data structure
         prayer_times = []
         
         # Fajr
-        if mosque.fajr_beginning and mosque.fajr_jamaah:
+        if fajr_adhan and fajr_iqamah:
             prayer_times.append({
                 'name': 'Fajr',
-                'beginning': mosque.fajr_beginning.strftime('%I:%M %p'),
-                'jamaah': mosque.fajr_jamaah.strftime('%I:%M %p'),
-                'beginning_time': mosque.fajr_beginning,
-                'jamaah_time': mosque.fajr_jamaah,
+                'beginning': fajr_adhan.strftime('%I:%M %p'),
+                'jamaah': fajr_iqamah.strftime('%I:%M %p'),
+                'beginning_time': fajr_adhan,
+                'jamaah_time': fajr_iqamah,
             })
         
         # Sunrise (no jamaah)
-        if mosque.sunrise:
+        if sunrise:
             prayer_times.append({
                 'name': 'Sunrise',
-                'time': mosque.sunrise.strftime('%I:%M %p'),
-                'time_obj': mosque.sunrise,
+                'time': sunrise.strftime('%I:%M %p'),
+                'time_obj': sunrise,
             })
         
         # Dhuhr
-        if mosque.dhuhr_beginning and mosque.dhuhr_jamaah:
+        if dhuhr_adhan and dhuhr_iqamah:
             prayer_times.append({
                 'name': 'Dhuhr',
-                'beginning': mosque.dhuhr_beginning.strftime('%I:%M %p'),
-                'jamaah': mosque.dhuhr_jamaah.strftime('%I:%M %p'),
-                'beginning_time': mosque.dhuhr_beginning,
-                'jamaah_time': mosque.dhuhr_jamaah,
+                'beginning': dhuhr_adhan.strftime('%I:%M %p'),
+                'jamaah': dhuhr_iqamah.strftime('%I:%M %p'),
+                'beginning_time': dhuhr_adhan,
+                'jamaah_time': dhuhr_iqamah,
             })
         
         # Asr
-        if mosque.asr_beginning and mosque.asr_jamaah:
+        if asr_adhan and asr_iqamah:
             prayer_times.append({
                 'name': 'Asr',
-                'beginning': mosque.asr_beginning.strftime('%I:%M %p'),
-                'jamaah': mosque.asr_jamaah.strftime('%I:%M %p'),
-                'beginning_time': mosque.asr_beginning,
-                'jamaah_time': mosque.asr_jamaah,
+                'beginning': asr_adhan.strftime('%I:%M %p'),
+                'jamaah': asr_iqamah.strftime('%I:%M %p'),
+                'beginning_time': asr_adhan,
+                'jamaah_time': asr_iqamah,
             })
         
         # Maghrib
-        if mosque.maghrib_sunset and mosque.maghrib_jamaah:
+        if maghrib_adhan and maghrib_iqamah:
             prayer_times.append({
                 'name': 'Maghrib',
-                'sunset': mosque.maghrib_sunset.strftime('%I:%M %p'),
-                'jamaah': mosque.maghrib_jamaah.strftime('%I:%M %p'),
-                'sunset_time': mosque.maghrib_sunset,
-                'jamaah_time': mosque.maghrib_jamaah,
+                'sunset': maghrib_adhan.strftime('%I:%M %p'),
+                'jamaah': maghrib_iqamah.strftime('%I:%M %p'),
+                'sunset_time': maghrib_adhan,
+                'jamaah_time': maghrib_iqamah,
             })
         
         # Isha
-        if mosque.isha_beginning and mosque.isha_jamaah:
+        if isha_adhan and isha_iqamah:
             prayer_times.append({
                 'name': 'Isha',
-                'beginning': mosque.isha_beginning.strftime('%I:%M %p'),
-                'jamaah': mosque.isha_jamaah.strftime('%I:%M %p'),
-                'beginning_time': mosque.isha_beginning,
-                'jamaah_time': mosque.isha_jamaah,
+                'beginning': isha_adhan.strftime('%I:%M %p'),
+                'jamaah': isha_iqamah.strftime('%I:%M %p'),
+                'beginning_time': isha_adhan,
+                'jamaah_time': isha_iqamah,
             })
         
         # Find next prayer
@@ -327,6 +364,7 @@ class MosqueViewSet(viewsets.ModelViewSet):
             'next_prayer_index': next_prayer_index,
             'next_prayer_name': prayer_times[next_prayer_index]['name'] if next_prayer_index is not None else None,
             'time_until_next': time_until_next,
+            'source': 'monthly' if monthly else 'static',
         })
     
     @action(detail=True, methods=['post'])
@@ -378,11 +416,14 @@ class MosqueViewSet(viewsets.ModelViewSet):
 
     @action(detail=False, methods=['get', 'post'], permission_classes=[IsAuthenticated], url_path='imam/my-mosques')
     def imam_mosques(self, request):
-        if not is_imam_user(request.user):
+        if not is_imam_user(request.user) and not request.user.is_superuser:
             return Response({'detail': 'Only Imam users can access this endpoint.'}, status=status.HTTP_403_FORBIDDEN)
 
         if request.method == 'GET':
-            queryset = Mosque.objects.filter(created_by=request.user).order_by('-updated_at')
+            if request.user.is_superuser:
+                queryset = Mosque.objects.all().order_by('-updated_at')
+            else:
+                queryset = Mosque.objects.filter(created_by=request.user).order_by('-updated_at')
             serializer = ImamMosqueUpsertSerializer(queryset, many=True, context={'request': request})
             return Response(serializer.data, status=status.HTTP_200_OK)
 
@@ -393,11 +434,11 @@ class MosqueViewSet(viewsets.ModelViewSet):
 
     @action(detail=True, methods=['put', 'patch', 'delete'], permission_classes=[IsAuthenticated], url_path='imam/manage')
     def imam_manage(self, request, pk=None):
-        if not is_imam_user(request.user):
+        if not is_imam_user(request.user) and not request.user.is_superuser:
             return Response({'detail': 'Only Imam users can access this endpoint.'}, status=status.HTTP_403_FORBIDDEN)
 
         mosque = self.get_object()
-        if mosque.created_by_id != request.user.id:
+        if not request.user.is_superuser and mosque.created_by_id != request.user.id:
             return Response({'detail': 'You can manage only your own mosque records.'}, status=status.HTTP_403_FORBIDDEN)
 
         if request.method == 'DELETE':
@@ -427,11 +468,11 @@ class MosqueViewSet(viewsets.ModelViewSet):
 
     @action(detail=True, methods=['post', 'delete'], permission_classes=[IsAuthenticated], url_path='imam/monthly-timetable')
     def imam_monthly_timetable(self, request, pk=None):
-        if not is_imam_user(request.user):
+        if not is_imam_user(request.user) and not request.user.is_superuser:
             return Response({'detail': 'Only Imam users can access this endpoint.'}, status=status.HTTP_403_FORBIDDEN)
 
         mosque = self.get_object()
-        if mosque.created_by_id != request.user.id:
+        if not request.user.is_superuser and mosque.created_by_id != request.user.id:
             return Response({'detail': 'You can manage only your own mosque records.'}, status=status.HTTP_403_FORBIDDEN)
 
         if request.method == 'DELETE':

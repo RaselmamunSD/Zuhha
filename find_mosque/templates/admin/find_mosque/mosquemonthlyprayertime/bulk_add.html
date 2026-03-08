@@ -1,0 +1,274 @@
+{% extends "admin/base_site.html" %}
+{% load i18n %}
+
+{% block title %}Bulk Monthly Prayer Timetable{% endblock %}
+
+{% block extrahead %}
+{{ block.super }}
+<style>
+  #bulk-wrap { font-family:'Segoe UI',sans-serif; max-width:100%; overflow-x:auto; padding:0 10px; }
+  h1.page-title { font-size:22px; font-weight:700; color:#1a7f55; margin-bottom:20px; }
+  .controls { display:flex; gap:12px; align-items:flex-end; flex-wrap:wrap; margin-bottom:24px; }
+  .ctrl-group label { font-size:13px; font-weight:600; color:#374151; display:block; margin-bottom:4px; }
+  .ctrl-group select { padding:8px 12px; border:1.5px solid #d1d5db; border-radius:8px; font-size:14px; background:#fff; min-width:160px; }
+  .mosque-name { font-weight:700; color:#1a7f55; font-size:16px; }
+  .btn { padding:9px 20px; border:none; border-radius:8px; font-size:14px; font-weight:600; cursor:pointer; }
+  .btn-green { background:#1a7f55; color:#fff; }
+  .btn-green:hover { background:#155f3e; }
+  .btn-save { padding:11px 32px; background:#1a7f55; color:#fff; border:none; border-radius:8px; font-size:15px; font-weight:700; cursor:pointer; margin-top:22px; }
+  .btn-save:hover { background:#155f3e; }
+  .msg { padding:12px 18px; border-radius:8px; margin-bottom:16px; font-weight:600; }
+  .msg-success { background:#d1fae5; color:#065f46; }
+  .msg-error { background:#fee2e2; color:#991b1b; }
+  table { border-collapse:collapse; width:100%; min-width:1100px; font-size:13px; margin-top:8px; }
+  thead th.hdr { background:#1a7f55; color:#fff; padding:10px 8px; text-align:center; font-size:13px; font-weight:600; white-space:nowrap; }
+  thead th.hdr-date { text-align:left; padding-left:12px; }
+  thead tr.sub-row th { background:#e9f5f0; color:#155f3e; font-size:11px; font-weight:700; padding:6px 4px; text-align:center; border-bottom:2px solid #b5d8c7; white-space:nowrap; }
+  tbody tr:nth-child(odd) { background:#f9fafb; }
+  tbody tr:hover { background:#edf6f3; }
+  tbody td { padding:5px 4px; border-bottom:1px solid #e5e7eb; vertical-align:middle; white-space:nowrap; }
+  tbody td.date-cell { font-weight:600; color:#374151; padding-left:10px; }
+  .ti { width:60px; padding:5px 5px; border:1.5px solid #d1d5db; border-radius:6px 0 0 6px; font-size:12px; text-align:center; outline:none; }
+  .ti:focus { border-color:#1a7f55; }
+  .ap { padding:5px 3px; border:1.5px solid #d1d5db; border-left:none; border-radius:0 6px 6px 0; font-size:11px; background:#f3f4f6; cursor:pointer; }
+  .ap:focus { border-color:#1a7f55; }
+  .pcell { display:flex; align-items:center; }
+  .copy-row-btn { font-size:11px; padding:2px 7px; background:#e0f2ec; color:#1a7f55; border:1px solid #b5d8c7; border-radius:4px; cursor:pointer; margin-left:6px; }
+  .copy-row-btn:hover { background:#b5d8c7; }
+  .top-copy-btn { padding:6px 14px; font-size:12px; background:#e0f2ec; color:#1a7f55; border:1px solid #b5d8c7; border-radius:6px; cursor:pointer; font-weight:600; }
+  .top-copy-btn:hover { background:#b5d8c7; }
+</style>
+{% endblock %}
+
+{% block content %}
+<div id="bulk-wrap">
+  <h1 class="page-title">📅 Bulk Monthly Prayer Timetable Entry</h1>
+
+  {% if messages %}
+    {% for m in messages %}
+      <div class="msg {% if 'success' in m.tags %}msg-success{% else %}msg-error{% endif %}">{{ m }}</div>
+    {% endfor %}
+  {% endif %}
+
+  <form method="post" id="bulk-form">
+    {% csrf_token %}
+
+    <div class="controls">
+      {% if mosques %}
+      <div class="ctrl-group">
+        <label for="mosque-sel">Mosque</label>
+        <select name="mosque_id" id="mosque-sel">
+          {% for m in mosques %}
+            <option value="{{ m.id }}" {% if selected_mosque and selected_mosque.id == m.id %}selected{% endif %}>{{ m.name }}</option>
+          {% endfor %}
+        </select>
+      </div>
+      {% else %}
+        <input type="hidden" name="mosque_id" value="{{ fixed_mosque.id }}">
+        <div class="mosque-name">🕌 {{ fixed_mosque.name }}</div>
+      {% endif %}
+
+      <div class="ctrl-group">
+        <label for="year-sel">Year</label>
+        <select name="year" id="year-sel">
+          {% for y in years %}
+            <option value="{{ y }}" {% if y == selected_year %}selected{% endif %}>{{ y }}</option>
+          {% endfor %}
+        </select>
+      </div>
+
+      <div class="ctrl-group">
+        <label for="month-sel">Month</label>
+        <select name="month" id="month-sel">
+          {% for mn in months %}
+            <option value="{{ mn.value }}" {% if mn.value == selected_month %}selected{% endif %}>{{ mn.label }}</option>
+          {% endfor %}
+        </select>
+      </div>
+
+      <div class="ctrl-group" style="padding-bottom:2px">
+        <label>&nbsp;</label>
+        <button type="button" class="btn btn-green" onclick="reloadGrid()">Load / Refresh</button>
+      </div>
+
+      {% if days %}
+      <div class="ctrl-group" style="padding-bottom:2px">
+        <label>&nbsp;</label>
+        <button type="button" class="top-copy-btn" onclick="fillAllFromRow1()">Copy Row 1 → All Rows</button>
+      </div>
+      {% endif %}
+    </div>
+
+    {% if days %}
+    <table id="timetable">
+      <thead>
+        <tr>
+          <th class="hdr hdr-date" rowspan="2">Date</th>
+          <th class="hdr" colspan="2">Fajr</th>
+          <th class="hdr" colspan="1">Sunrise</th>
+          <th class="hdr" colspan="2">Dhuhr</th>
+          <th class="hdr" colspan="2">Asr</th>
+          <th class="hdr" colspan="2">Maghrib</th>
+          <th class="hdr" colspan="2">Isha</th>
+        </tr>
+        <tr class="sub-row">
+          <th>Adhan</th><th>Iqamah</th>
+          <th>Time</th>
+          <th>Adhan</th><th>Iqamah</th>
+          <th>Adhan</th><th>Iqamah</th>
+          <th>Adhan</th><th>Iqamah</th>
+          <th>Adhan</th><th>Iqamah</th>
+        </tr>
+      </thead>
+      <tbody>
+        {% for day in days %}
+        <tr data-day="{{ day.day }}">
+          <td class="date-cell">
+            {{ day.label }}
+            <button type="button" class="copy-row-btn" onclick="copyRowDown({{ day.day }},{{ days|length }})">↓ Copy down</button>
+          </td>
+          {# Fajr Adhan #}
+          <td><div class="pcell">
+            <input class="ti" type="text" name="fajr_adhan_t_{{ day.day }}" placeholder="05:00" value="{{ day.fajr_adhan_t }}">
+            <select class="ap" name="fajr_adhan_ap_{{ day.day }}">
+              <option value="AM" {% if day.fajr_adhan_ap == "AM" %}selected{% endif %}>AM</option>
+              <option value="PM" {% if day.fajr_adhan_ap == "PM" %}selected{% endif %}>PM</option>
+            </select>
+          </div></td>
+          {# Fajr Iqamah #}
+          <td><div class="pcell">
+            <input class="ti" type="text" name="fajr_iqamah_t_{{ day.day }}" placeholder="05:20" value="{{ day.fajr_iqamah_t }}">
+            <select class="ap" name="fajr_iqamah_ap_{{ day.day }}">
+              <option value="AM" {% if day.fajr_iqamah_ap == "AM" %}selected{% endif %}>AM</option>
+              <option value="PM" {% if day.fajr_iqamah_ap == "PM" %}selected{% endif %}>PM</option>
+            </select>
+          </div></td>
+          {# Sunrise #}
+          <td><div class="pcell">
+            <input class="ti" type="text" name="sunrise_t_{{ day.day }}" placeholder="06:10" value="{{ day.sunrise_t }}">
+            <select class="ap" name="sunrise_ap_{{ day.day }}">
+              <option value="AM" {% if day.sunrise_ap == "AM" %}selected{% endif %}>AM</option>
+              <option value="PM" {% if day.sunrise_ap == "PM" %}selected{% endif %}>PM</option>
+            </select>
+          </div></td>
+          {# Dhuhr Adhan #}
+          <td><div class="pcell">
+            <input class="ti" type="text" name="dhuhr_adhan_t_{{ day.day }}" placeholder="01:00" value="{{ day.dhuhr_adhan_t }}">
+            <select class="ap" name="dhuhr_adhan_ap_{{ day.day }}">
+              <option value="AM" {% if day.dhuhr_adhan_ap == "AM" %}selected{% endif %}>AM</option>
+              <option value="PM" {% if day.dhuhr_adhan_ap == "PM" %}selected{% endif %}>PM</option>
+            </select>
+          </div></td>
+          {# Dhuhr Iqamah #}
+          <td><div class="pcell">
+            <input class="ti" type="text" name="dhuhr_iqamah_t_{{ day.day }}" placeholder="01:20" value="{{ day.dhuhr_iqamah_t }}">
+            <select class="ap" name="dhuhr_iqamah_ap_{{ day.day }}">
+              <option value="AM" {% if day.dhuhr_iqamah_ap == "AM" %}selected{% endif %}>AM</option>
+              <option value="PM" {% if day.dhuhr_iqamah_ap == "PM" %}selected{% endif %}>PM</option>
+            </select>
+          </div></td>
+          {# Asr Adhan #}
+          <td><div class="pcell">
+            <input class="ti" type="text" name="asr_adhan_t_{{ day.day }}" placeholder="04:30" value="{{ day.asr_adhan_t }}">
+            <select class="ap" name="asr_adhan_ap_{{ day.day }}">
+              <option value="AM" {% if day.asr_adhan_ap == "AM" %}selected{% endif %}>AM</option>
+              <option value="PM" {% if day.asr_adhan_ap == "PM" %}selected{% endif %}>PM</option>
+            </select>
+          </div></td>
+          {# Asr Iqamah #}
+          <td><div class="pcell">
+            <input class="ti" type="text" name="asr_iqamah_t_{{ day.day }}" placeholder="04:45" value="{{ day.asr_iqamah_t }}">
+            <select class="ap" name="asr_iqamah_ap_{{ day.day }}">
+              <option value="AM" {% if day.asr_iqamah_ap == "AM" %}selected{% endif %}>AM</option>
+              <option value="PM" {% if day.asr_iqamah_ap == "PM" %}selected{% endif %}>PM</option>
+            </select>
+          </div></td>
+          {# Maghrib Adhan #}
+          <td><div class="pcell">
+            <input class="ti" type="text" name="maghrib_adhan_t_{{ day.day }}" placeholder="07:00" value="{{ day.maghrib_adhan_t }}">
+            <select class="ap" name="maghrib_adhan_ap_{{ day.day }}">
+              <option value="AM" {% if day.maghrib_adhan_ap == "AM" %}selected{% endif %}>AM</option>
+              <option value="PM" {% if day.maghrib_adhan_ap == "PM" %}selected{% endif %}>PM</option>
+            </select>
+          </div></td>
+          {# Maghrib Iqamah #}
+          <td><div class="pcell">
+            <input class="ti" type="text" name="maghrib_iqamah_t_{{ day.day }}" placeholder="07:05" value="{{ day.maghrib_iqamah_t }}">
+            <select class="ap" name="maghrib_iqamah_ap_{{ day.day }}">
+              <option value="AM" {% if day.maghrib_iqamah_ap == "AM" %}selected{% endif %}>AM</option>
+              <option value="PM" {% if day.maghrib_iqamah_ap == "PM" %}selected{% endif %}>PM</option>
+            </select>
+          </div></td>
+          {# Isha Adhan #}
+          <td><div class="pcell">
+            <input class="ti" type="text" name="isha_adhan_t_{{ day.day }}" placeholder="08:30" value="{{ day.isha_adhan_t }}">
+            <select class="ap" name="isha_adhan_ap_{{ day.day }}">
+              <option value="AM" {% if day.isha_adhan_ap == "AM" %}selected{% endif %}>AM</option>
+              <option value="PM" {% if day.isha_adhan_ap == "PM" %}selected{% endif %}>PM</option>
+            </select>
+          </div></td>
+          {# Isha Iqamah #}
+          <td><div class="pcell">
+            <input class="ti" type="text" name="isha_iqamah_t_{{ day.day }}" placeholder="08:45" value="{{ day.isha_iqamah_t }}">
+            <select class="ap" name="isha_iqamah_ap_{{ day.day }}">
+              <option value="AM" {% if day.isha_iqamah_ap == "AM" %}selected{% endif %}>AM</option>
+              <option value="PM" {% if day.isha_iqamah_ap == "PM" %}selected{% endif %}>PM</option>
+            </select>
+          </div></td>
+        </tr>
+        {% endfor %}
+      </tbody>
+    </table>
+
+    <input type="hidden" name="total_days" value="{{ days|length }}">
+    <button type="submit" class="btn-save">💾 Save Full Month Timetable</button>
+    <p style="color:#6b7280;font-size:12px;margin-top:8px;">Saves all {{ days|length }} days — existing entries are overwritten.</p>
+    {% else %}
+    <p style="color:#6b7280;font-size:14px;margin-top:12px;">
+      📌 Select a mosque, year and month above, then click <strong>Load / Refresh</strong>.
+    </p>
+    {% endif %}
+
+  </form>
+</div>
+
+<script>
+var PRAYER_FIELDS = [
+  'fajr_adhan','fajr_iqamah',
+  'sunrise',
+  'dhuhr_adhan','dhuhr_iqamah',
+  'asr_adhan','asr_iqamah',
+  'maghrib_adhan','maghrib_iqamah',
+  'isha_adhan','isha_iqamah',
+];
+
+function reloadGrid() {
+  var mosqueEl = document.getElementById('mosque-sel');
+  var mosqueId = mosqueEl ? mosqueEl.value : document.querySelector('[name=mosque_id]').value;
+  var year  = document.getElementById('year-sel').value;
+  var month = document.getElementById('month-sel').value;
+  window.location.href = '?mosque_id=' + encodeURIComponent(mosqueId) +
+                         '&year=' + encodeURIComponent(year) +
+                         '&month=' + encodeURIComponent(month);
+}
+
+function copyRowDown(srcDay, totalDays) {
+  PRAYER_FIELDS.forEach(function(f) {
+    var t  = document.querySelector('[name="' + f + '_t_' + srcDay + '"]');
+    var ap = document.querySelector('[name="' + f + '_ap_' + srcDay + '"]');
+    if (!t || !ap) return;
+    for (var d = srcDay + 1; d <= totalDays; d++) {
+      var tt  = document.querySelector('[name="' + f + '_t_' + d + '"]');
+      var aap = document.querySelector('[name="' + f + '_ap_' + d + '"]');
+      if (tt) tt.value = t.value;
+      if (aap) aap.value = ap.value;
+    }
+  });
+}
+
+function fillAllFromRow1() {
+  var totalDays = parseInt(document.querySelector('[name=total_days]').value, 10);
+  copyRowDown(1, totalDays);
+}
+</script>
+{% endblock %}

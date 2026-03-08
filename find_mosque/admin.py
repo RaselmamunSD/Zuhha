@@ -156,6 +156,7 @@ class ImamMosqueForm(forms.ModelForm):
     Simplified form for Imam users.
     'city' ForeignKey is replaced by a plain text field.
     The actual City object is resolved in MosqueAdmin.save_model.
+    Prayer time fields use the AM/PM widget.
     """
     city_name = forms.CharField(
         max_length=200,
@@ -168,9 +169,28 @@ class ImamMosqueForm(forms.ModelForm):
         help_text='Enter the name of a city in any country.',
     )
 
+    fajr_beginning    = TimeAMPMField(label='Fajr Beginning',    required=False)
+    sunrise           = TimeAMPMField(label='Sunrise',            required=False)
+    dhuhr_beginning   = TimeAMPMField(label='Dhuhr Beginning',   required=False)
+    asr_beginning     = TimeAMPMField(label='Asr Beginning',     required=False)
+    maghrib_sunset    = TimeAMPMField(label='Maghrib Sunset',    required=False)
+    isha_beginning    = TimeAMPMField(label='Isha Beginning',    required=False)
+    fajr_jamaah       = TimeAMPMField(label='Fajr Jamaah',       required=False)
+    dhuhr_jamaah      = TimeAMPMField(label='Dhuhr Jamaah',      required=False)
+    asr_jamaah        = TimeAMPMField(label='Asr Jamaah',        required=False)
+    maghrib_jamaah    = TimeAMPMField(label='Maghrib Jamaah',    required=False)
+    isha_jamaah       = TimeAMPMField(label='Isha Jamaah',       required=False)
+    jumuah_khutbah    = TimeAMPMField(label='Jumuah Khutbah',   required=False)
+
     class Meta:
         model = Mosque
-        fields = ['name', 'address']  # city handled via city_name in save_model
+        fields = [
+            'name', 'address',
+            'fajr_beginning', 'sunrise', 'dhuhr_beginning', 'asr_beginning',
+            'maghrib_sunset', 'isha_beginning',
+            'fajr_jamaah', 'dhuhr_jamaah', 'asr_jamaah',
+            'maghrib_jamaah', 'isha_jamaah', 'jumuah_khutbah',
+        ]
         widgets = {
             'name': forms.TextInput(attrs={
                 'placeholder': 'Enter the mosque name.',
@@ -333,8 +353,9 @@ class MosqueAdmin(ModelAdmin):
                         defaults={'latitude': 0, 'longitude': 0, 'timezone': 'UTC'},
                     )
                 obj.city = city
-            if not obj.created_by_id:
-                obj.created_by = request.user
+        # Auto-set created_by for any user if not already set
+        if not obj.created_by_id:
+            obj.created_by = request.user
         super().save_model(request, obj, form, change)
 
     def get_list_editable(self, request):
@@ -405,6 +426,7 @@ class FavoriteMosqueAdmin(ModelAdmin):
 @admin.register(MosqueMonthlyPrayerTime)
 class MosqueMonthlyPrayerTimeAdmin(ModelAdmin):
     form = MosqueMonthlyPrayerTimeForm
+    change_list_template = 'admin/find_mosque/mosquemonthlyprayertime/change_list.html'
     list_display = ['mosque', 'year', 'month', 'day', 'fajr_adhan', 'fajr_iqamah', 'updated_at']
     list_filter = ['year', 'month', 'mosque__city__country']
     search_fields = ['mosque__name', 'mosque__city__name']
@@ -433,13 +455,6 @@ class MosqueMonthlyPrayerTimeAdmin(ModelAdmin):
             'fields': ('isha_adhan', 'isha_iqamah'),
         }),
     )
-
-    def formfield_for_foreignkey(self, db_field, request, **kwargs):
-        """Filter mosque dropdown for Imam users to show only their mosques."""
-        if db_field.name == 'mosque':
-            if not request.user.is_superuser and request.user.groups.filter(name='Imam').exists():
-                kwargs['queryset'] = Mosque.objects.filter(created_by=request.user)
-        return super().formfield_for_foreignkey(db_field, request, **kwargs)
 
     def get_queryset(self, request):
         qs = super().get_queryset(request)
@@ -489,6 +504,204 @@ class MosqueMonthlyPrayerTimeAdmin(ModelAdmin):
 
     def formfield_for_foreignkey(self, db_field, request, **kwargs):
         if db_field.name == 'mosque' and not request.user.is_superuser:
-            kwargs['queryset'] = Mosque.objects.filter(created_by=request.user)
+            if request.user.groups.filter(name='Imam').exists():
+                kwargs['queryset'] = Mosque.objects.filter(created_by=request.user)
         return super().formfield_for_foreignkey(db_field, request, **kwargs)
+
+    # ── Bulk-add custom URL ──────────────────────────────────────────────────
+
+    def get_urls(self):
+        from django.urls import path
+        urls = super().get_urls()
+        extra = [
+            path(
+                'bulk-add/',
+                self.admin_site.admin_view(self.bulk_add_view),
+                name='find_mosque_mosquemonthlyprayertime_bulk_add',
+            ),
+        ]
+        return extra + urls
+
+    def bulk_add_view(self, request):
+        import calendar
+        import datetime
+        from django.contrib import messages
+        from django.http import HttpResponseRedirect
+        from django.shortcuts import render
+
+        today = datetime.date.today()
+
+        # ── Mosque queryset ────────────────────────────────────────────────
+        if request.user.is_superuser:
+            mosques = Mosque.objects.all().order_by('name')
+            fixed_mosque = None
+        else:
+            mosques = Mosque.objects.filter(created_by=request.user).order_by('name')
+            fixed_mosque = mosques.first()
+
+        # ── Parse mosque / year / month from GET or POST ───────────────────
+        source = request.POST if request.method == 'POST' else request.GET
+        try:
+            mosque_id = int(source.get('mosque_id', 0))
+        except (ValueError, TypeError):
+            mosque_id = 0
+        try:
+            selected_year = int(source.get('year', today.year))
+        except (ValueError, TypeError):
+            selected_year = today.year
+        try:
+            selected_month = int(source.get('month', today.month))
+        except (ValueError, TypeError):
+            selected_month = today.month
+
+        # Validate ranges
+        if not (1 <= selected_month <= 12):
+            selected_month = today.month
+        if not (2000 <= selected_year <= 2100):
+            selected_year = today.year
+
+        # ── Resolve mosque ─────────────────────────────────────────────────
+        selected_mosque = None
+        if mosque_id:
+            try:
+                if request.user.is_superuser:
+                    selected_mosque = Mosque.objects.get(pk=mosque_id)
+                else:
+                    selected_mosque = Mosque.objects.get(pk=mosque_id, created_by=request.user)
+            except Mosque.DoesNotExist:
+                pass
+        if not selected_mosque and mosques.exists():
+            selected_mosque = mosques.first()
+
+        # ── Number of days in the selected month ───────────────────────────
+        _, num_days = calendar.monthrange(selected_year, selected_month)
+
+        # ── Helper: 24-hour time → (HH:MM str, "AM"/"PM") ─────────────────
+        def time_to_ampm(t):
+            if t is None:
+                return '', 'AM'
+            h, m = t.hour, t.minute
+            period = 'AM' if h < 12 else 'PM'
+            h12 = h % 12 or 12
+            return f'{h12:02d}:{m:02d}', period
+
+        # ── Helper: parse "HH:MM" + "AM"/"PM" → datetime.time or None ──────
+        def parse_time(time_str, ampm):
+            time_str = (time_str or '').strip()
+            if not time_str:
+                return None
+            try:
+                parts = time_str.split(':')
+                h = int(parts[0])
+                m = int(parts[1]) if len(parts) > 1 else 0
+                ampm = (ampm or 'AM').upper()
+                if ampm == 'PM' and h != 12:
+                    h += 12
+                elif ampm == 'AM' and h == 12:
+                    h = 0
+                return datetime.time(h, m)
+            except (ValueError, IndexError):
+                return None
+
+        PRAYER_PAIRS = [
+            ('fajr_adhan', 'fajr_iqamah'),
+            ('dhuhr_adhan', 'dhuhr_iqamah'),
+            ('asr_adhan', 'asr_iqamah'),
+            ('maghrib_adhan', 'maghrib_iqamah'),
+            ('isha_adhan', 'isha_iqamah'),
+        ]
+        ALL_FIELDS = [f for pair in PRAYER_PAIRS for f in pair]
+
+        # ── POST: save ─────────────────────────────────────────────────────
+        if request.method == 'POST' and selected_mosque:
+            errors = []
+            saved = 0
+            for d in range(1, num_days + 1):
+                times = {}
+                for field in ALL_FIELDS:
+                    t_str = request.POST.get(f'{field}_t_{d}', '')
+                    ap    = request.POST.get(f'{field}_ap_{d}', 'AM')
+                    parsed = parse_time(t_str, ap)
+                    times[field] = parsed
+
+                # Sunrise is optional
+                sunrise_t_str = request.POST.get(f'sunrise_t_{d}', '')
+                sunrise_ap    = request.POST.get(f'sunrise_ap_{d}', 'AM')
+                times['sunrise'] = parse_time(sunrise_t_str, sunrise_ap)
+
+                # All required fields must be present
+                missing = [f for f in ALL_FIELDS if times[f] is None]
+                if missing:
+                    errors.append(f'Day {d}: missing {', '.join(missing)}')
+                    continue
+
+                MosqueMonthlyPrayerTime.objects.update_or_create(
+                    mosque=selected_mosque,
+                    year=selected_year,
+                    month=selected_month,
+                    day=d,
+                    defaults=times,
+                )
+                saved += 1
+
+            if errors:
+                for e in errors:
+                    messages.error(request, e)
+            if saved:
+                month_name = calendar.month_name[selected_month]
+                messages.success(
+                    request,
+                    f'✅ Saved {saved} day(s) for {selected_mosque.name} — {month_name} {selected_year}.'
+                )
+            # Redirect to GET to prevent re-submit
+            return HttpResponseRedirect(
+                f'{request.path}?mosque_id={selected_mosque.pk}&year={selected_year}&month={selected_month}'
+            )
+
+        # ── Build days list with pre-filled data (GET) ─────────────────────
+        days = []
+        if selected_mosque:
+            existing = {
+                entry.day: entry
+                for entry in MosqueMonthlyPrayerTime.objects.filter(
+                    mosque=selected_mosque,
+                    year=selected_year,
+                    month=selected_month,
+                )
+            }
+            day_names = ['Mon','Tue','Wed','Thu','Fri','Sat','Sun']
+            first_weekday, _ = calendar.monthrange(selected_year, selected_month)
+            month_abbr = calendar.month_abbr[selected_month]
+
+            for d in range(1, num_days + 1):
+                entry = existing.get(d)
+                day_data = {'day': d, 'label': f'{day_names[(first_weekday + d - 1) % 7]} {d} {month_abbr}'}
+                # Sunrise
+                sr_t, sr_ap = time_to_ampm(getattr(entry, 'sunrise', None) if entry else None)
+                day_data['sunrise_t'] = sr_t
+                day_data['sunrise_ap'] = sr_ap
+                for field in ALL_FIELDS:
+                    t_str, ap = time_to_ampm(getattr(entry, field, None) if entry else None)
+                    day_data[f'{field}_t'] = t_str
+                    day_data[f'{field}_ap'] = ap
+                days.append(day_data)
+
+        # ── Build year/month selector data ─────────────────────────────────
+        years = list(range(today.year - 1, today.year + 3))
+        months = [{'value': i, 'label': calendar.month_name[i]} for i in range(1, 13)]
+
+        context = {
+            **self.admin_site.each_context(request),
+            'title': 'Bulk Monthly Prayer Timetable',
+            'mosques': mosques if not fixed_mosque else None,
+            'fixed_mosque': fixed_mosque,
+            'selected_mosque': selected_mosque,
+            'selected_year': selected_year,
+            'selected_month': selected_month,
+            'years': years,
+            'months': months,
+            'days': days,
+            'opts': self.model._meta,
+        }
+        return render(request, 'admin/find_mosque/mosquemonthlyprayertime/bulk_add.html', context)
 

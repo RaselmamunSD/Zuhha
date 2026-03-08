@@ -9,12 +9,9 @@ class PrayerTimeAdmin(ModelAdmin):
     search_fields = ['date']
     ordering = ['-date']
     readonly_fields = ['created_at', 'updated_at']
-    
+
     def has_module_permission(self, request):
-        """Hide from Imam users."""
-        if request.user.is_superuser:
-            return True
-        return not request.user.groups.filter(name='Imam').exists()
+        return False
 
 
 @admin.register(MonthlyPrayerTime)
@@ -24,12 +21,9 @@ class MonthlyPrayerTimeAdmin(ModelAdmin):
     search_fields = ['city__name']
     ordering = ['-year', '-month', '-day']
     readonly_fields = ['created_at', 'updated_at']
-    
+
     def has_module_permission(self, request):
-        """Hide from Imam users."""
-        if request.user.is_superuser:
-            return True
-        return not request.user.groups.filter(name='Imam').exists()
+        return False
 
 
 @admin.register(PrayerTimeAdjustment)
@@ -39,10 +33,7 @@ class PrayerTimeAdjustmentAdmin(ModelAdmin):
     search_fields = ['city__name']
     list_editable = ['adjustment_minutes', 'is_active']
     readonly_fields = ['created_at', 'updated_at']
-    
+
     def has_module_permission(self, request):
-        """Hide from Imam users."""
-        if request.user.is_superuser:
-            return True
-        return not request.user.groups.filter(name='Imam').exists()
+        return False
 
