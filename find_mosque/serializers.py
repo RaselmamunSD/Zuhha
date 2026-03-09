@@ -337,6 +337,14 @@ class ImamMosqueUpsertSerializer(serializers.ModelSerializer):
 
 class MosqueMonthlyPrayerTimeSerializer(serializers.ModelSerializer):
     mosque_name = serializers.CharField(source='mosque.name', read_only=True)
+    is_friday = serializers.SerializerMethodField()
+
+    def get_is_friday(self, obj):
+        import datetime
+        try:
+            return datetime.date(obj.year, obj.month, obj.day).weekday() == 4
+        except (ValueError, TypeError):
+            return False
 
     class Meta:
         model = MosqueMonthlyPrayerTime
@@ -347,6 +355,7 @@ class MosqueMonthlyPrayerTimeSerializer(serializers.ModelSerializer):
             'year',
             'month',
             'day',
+            'is_friday',
             'fajr_adhan',
             'fajr_iqamah',
             'sunrise',
@@ -358,14 +367,18 @@ class MosqueMonthlyPrayerTimeSerializer(serializers.ModelSerializer):
             'maghrib_iqamah',
             'isha_adhan',
             'isha_iqamah',
+            'jumuah_adhan',
+            'jumuah_iqamah',
             'created_at',
             'updated_at',
         ]
-        read_only_fields = ['created_at', 'updated_at', 'mosque_name']
+        read_only_fields = ['created_at', 'updated_at', 'mosque_name', 'is_friday']
         extra_kwargs = {
             'mosque': {'required': False},
             'year': {'required': False},
             'month': {'required': False},
+            'jumuah_adhan': {'required': False, 'allow_null': True},
+            'jumuah_iqamah': {'required': False, 'allow_null': True},
         }
 
 

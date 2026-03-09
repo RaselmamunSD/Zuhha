@@ -129,6 +129,10 @@ class MosqueMonthlyPrayerTime(models.Model):
     isha_adhan = models.TimeField()
     isha_iqamah = models.TimeField()
 
+    # Jummah prayer (Friday only)
+    jumuah_adhan = models.TimeField(null=True, blank=True, help_text="Jummah Khutbah/Adhan time (Fridays only)")
+    jumuah_iqamah = models.TimeField(null=True, blank=True, help_text="Jummah Iqamah time (Fridays only)")
+
     created_at = models.DateTimeField(auto_now_add=True)
     updated_at = models.DateTimeField(auto_now=True)
 

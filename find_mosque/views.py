@@ -247,6 +247,8 @@ class MosqueViewSet(viewsets.ModelViewSet):
             maghrib_iqamah = monthly.maghrib_iqamah
             isha_adhan    = monthly.isha_adhan
             isha_iqamah   = monthly.isha_iqamah
+            jumuah_adhan  = monthly.jumuah_adhan
+            jumuah_iqamah = monthly.jumuah_iqamah
         else:
             # Fall back to static mosque fields
             fajr_adhan    = mosque.fajr_beginning
@@ -260,6 +262,11 @@ class MosqueViewSet(viewsets.ModelViewSet):
             maghrib_iqamah = mosque.maghrib_jamaah
             isha_adhan    = mosque.isha_beginning
             isha_iqamah   = mosque.isha_jamaah
+            jumuah_adhan  = mosque.jumuah_khutbah
+            jumuah_iqamah = None
+
+        # Is today Friday? (weekday 4 = Friday)
+        is_friday_today = (current_date.weekday() == 4)
         
         # Prayer times data structure
         prayer_times = []
@@ -282,15 +289,29 @@ class MosqueViewSet(viewsets.ModelViewSet):
                 'time_obj': sunrise,
             })
         
-        # Dhuhr
-        if dhuhr_adhan and dhuhr_iqamah:
-            prayer_times.append({
-                'name': 'Dhuhr',
-                'beginning': dhuhr_adhan.strftime('%I:%M %p'),
-                'jamaah': dhuhr_iqamah.strftime('%I:%M %p'),
-                'beginning_time': dhuhr_adhan,
-                'jamaah_time': dhuhr_iqamah,
-            })
+        # Dhuhr / Jummah — on Fridays show Jummah if times are available
+        if is_friday_today and (jumuah_adhan or jumuah_iqamah):
+            # Use jumuah times; fall back to dhuhr times if one side is missing
+            j_adhan  = jumuah_adhan  or dhuhr_adhan
+            j_iqamah = jumuah_iqamah or dhuhr_iqamah
+            if j_adhan and j_iqamah:
+                prayer_times.append({
+                    'name': 'Jummah',
+                    'beginning': j_adhan.strftime('%I:%M %p'),
+                    'jamaah': j_iqamah.strftime('%I:%M %p'),
+                    'beginning_time': j_adhan,
+                    'jamaah_time': j_iqamah,
+                    'is_jummah': True,
+                })
+        else:
+            if dhuhr_adhan and dhuhr_iqamah:
+                prayer_times.append({
+                    'name': 'Dhuhr',
+                    'beginning': dhuhr_adhan.strftime('%I:%M %p'),
+                    'jamaah': dhuhr_iqamah.strftime('%I:%M %p'),
+                    'beginning_time': dhuhr_adhan,
+                    'jamaah_time': dhuhr_iqamah,
+                })
         
         # Asr
         if asr_adhan and asr_iqamah:
@@ -515,6 +536,10 @@ class MosqueViewSet(viewsets.ModelViewSet):
         updated_rows = []
         for entry in entries:
             day = entry['day']
+            import datetime as _dt
+            is_friday = (_dt.date(year, month, day).weekday() == 4)
+            jumuah_adhan  = entry.get('jumuah_adhan')  if is_friday else None
+            jumuah_iqamah = entry.get('jumuah_iqamah') if is_friday else None
             row = existing.get(day)
             if row:
                 row.fajr_adhan = entry['fajr_adhan']
@@ -527,6 +552,8 @@ class MosqueViewSet(viewsets.ModelViewSet):
                 row.maghrib_iqamah = entry['maghrib_iqamah']
                 row.isha_adhan = entry['isha_adhan']
                 row.isha_iqamah = entry['isha_iqamah']
+                row.jumuah_adhan  = jumuah_adhan
+                row.jumuah_iqamah = jumuah_iqamah
                 row.save()
             else:
                 row = mosque.monthly_prayer_times.create(
@@ -543,6 +570,8 @@ class MosqueViewSet(viewsets.ModelViewSet):
                     maghrib_iqamah=entry['maghrib_iqamah'],
                     isha_adhan=entry['isha_adhan'],
                     isha_iqamah=entry['isha_iqamah'],
+                    jumuah_adhan=jumuah_adhan,
+                    jumuah_iqamah=jumuah_iqamah,
                 )
             updated_rows.append(row)
 

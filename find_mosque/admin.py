@@ -101,6 +101,7 @@ TIME_FIELDS = [
     'asr_adhan', 'asr_iqamah',
     'maghrib_adhan', 'maghrib_iqamah',
     'isha_adhan', 'isha_iqamah',
+    'jumuah_adhan', 'jumuah_iqamah',
 ]
 
 TIME_HELP = {
@@ -115,6 +116,8 @@ TIME_HELP = {
     'maghrib_iqamah':'Maghrib Iqamah — e.g. 06:50 PM',
     'isha_adhan':    'Isha Adhan — e.g. 08:00 PM',
     'isha_iqamah':   'Isha Iqamah — e.g. 08:20 PM',
+    'jumuah_adhan':  'Jummah Khutbah/Adhan — Fridays only, e.g. 01:00 PM',
+    'jumuah_iqamah': 'Jummah Iqamah — Fridays only, e.g. 01:30 PM',
 }
 
 
@@ -454,6 +457,10 @@ class MosqueMonthlyPrayerTimeAdmin(ModelAdmin):
         ('Isha Prayer Times', {
             'fields': ('isha_adhan', 'isha_iqamah'),
         }),
+        ('Jummah Prayer Times (Friday Only)', {
+            'fields': ('jumuah_adhan', 'jumuah_iqamah'),
+            'description': 'Only fill these for Friday entries. On Fridays the frontend will display Jummah instead of Dhuhr.',
+        }),
     )
 
     def get_queryset(self, request):
@@ -612,6 +619,7 @@ class MosqueMonthlyPrayerTimeAdmin(ModelAdmin):
             ('isha_adhan', 'isha_iqamah'),
         ]
         ALL_FIELDS = [f for pair in PRAYER_PAIRS for f in pair]
+        JUMUAH_FIELDS = ['jumuah_adhan', 'jumuah_iqamah']
 
         # ── POST: save ─────────────────────────────────────────────────────
         if request.method == 'POST' and selected_mosque:
@@ -630,10 +638,25 @@ class MosqueMonthlyPrayerTimeAdmin(ModelAdmin):
                 sunrise_ap    = request.POST.get(f'sunrise_ap_{d}', 'AM')
                 times['sunrise'] = parse_time(sunrise_t_str, sunrise_ap)
 
+                # Jummah (Friday only — optional, clear on non-Fridays)
+                import datetime as _dt
+                day_date = _dt.date(selected_year, selected_month, d)
+                is_friday = (day_date.weekday() == 4)  # 4 = Friday
+                if is_friday:
+                    ju_t  = request.POST.get(f'jumuah_adhan_t_{d}', '')
+                    ju_ap = request.POST.get(f'jumuah_adhan_ap_{d}', 'PM')
+                    ji_t  = request.POST.get(f'jumuah_iqamah_t_{d}', '')
+                    ji_ap = request.POST.get(f'jumuah_iqamah_ap_{d}', 'PM')
+                    times['jumuah_adhan']  = parse_time(ju_t, ju_ap)
+                    times['jumuah_iqamah'] = parse_time(ji_t, ji_ap)
+                else:
+                    times['jumuah_adhan']  = None
+                    times['jumuah_iqamah'] = None
+
                 # All required fields must be present
                 missing = [f for f in ALL_FIELDS if times[f] is None]
                 if missing:
-                    errors.append(f'Day {d}: missing {', '.join(missing)}')
+                    errors.append(f'Day {d}: missing {", ".join(missing)}')
                     continue
 
                 MosqueMonthlyPrayerTime.objects.update_or_create(
@@ -674,9 +697,16 @@ class MosqueMonthlyPrayerTimeAdmin(ModelAdmin):
             first_weekday, _ = calendar.monthrange(selected_year, selected_month)
             month_abbr = calendar.month_abbr[selected_month]
 
+            import datetime as _dt
             for d in range(1, num_days + 1):
                 entry = existing.get(d)
-                day_data = {'day': d, 'label': f'{day_names[(first_weekday + d - 1) % 7]} {d} {month_abbr}'}
+                day_date = _dt.date(selected_year, selected_month, d)
+                is_friday = (day_date.weekday() == 4)
+                day_data = {
+                    'day': d,
+                    'label': f'{day_names[(first_weekday + d - 1) % 7]} {d} {month_abbr}',
+                    'is_friday': is_friday,
+                }
                 # Sunrise
                 sr_t, sr_ap = time_to_ampm(getattr(entry, 'sunrise', None) if entry else None)
                 day_data['sunrise_t'] = sr_t
@@ -685,6 +715,13 @@ class MosqueMonthlyPrayerTimeAdmin(ModelAdmin):
                     t_str, ap = time_to_ampm(getattr(entry, field, None) if entry else None)
                     day_data[f'{field}_t'] = t_str
                     day_data[f'{field}_ap'] = ap
+                # Jummah (only meaningful on Fridays)
+                ju_t, ju_ap = time_to_ampm(getattr(entry, 'jumuah_adhan', None) if entry else None)
+                ji_t, ji_ap = time_to_ampm(getattr(entry, 'jumuah_iqamah', None) if entry else None)
+                day_data['jumuah_adhan_t']  = ju_t
+                day_data['jumuah_adhan_ap'] = ju_ap
+                day_data['jumuah_iqamah_t']  = ji_t
+                day_data['jumuah_iqamah_ap'] = ji_ap
                 days.append(day_data)
 
         # ── Build year/month selector data ─────────────────────────────────

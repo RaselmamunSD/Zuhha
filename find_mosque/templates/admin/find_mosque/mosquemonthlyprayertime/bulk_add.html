@@ -37,6 +37,27 @@
   .copy-row-btn:hover { background:#b5d8c7; }
   .top-copy-btn { padding:6px 14px; font-size:12px; background:#e0f2ec; color:#1a7f55; border:1px solid #b5d8c7; border-radius:6px; cursor:pointer; font-weight:600; }
   .top-copy-btn:hover { background:#b5d8c7; }
+
+  /* ── Friday row highlight ─────────────────────── */
+  tbody tr.friday-row { background: linear-gradient(90deg, #fef9ec 0%, #fffbf0 100%) !important; }
+  tbody tr.friday-row:hover { background: linear-gradient(90deg, #fef3c7 0%, #fef9ec 100%) !important; }
+  tbody tr.friday-row td.date-cell { color:#92400e; font-weight:700; }
+  .fri-badge {
+    display:inline-block; font-size:10px; font-weight:700; padding:1px 6px;
+    background:linear-gradient(135deg,#f59e0b,#fbbf24); color:#fff;
+    border-radius:10px; margin-left:5px; letter-spacing:.3px;
+    box-shadow:0 1px 3px rgba(245,158,11,.4);
+  }
+
+  /* ── Jummah column ────────────────────────────── */
+  thead th.hdr-jummah { background:linear-gradient(135deg,#92400e,#b45309); }
+  thead tr.sub-row th.sub-jummah { background:#fef3c7; color:#92400e; border-bottom:2px solid #f59e0b; }
+  .jumuah-cell { background:rgba(251,191,36,.08); }
+  .ti-fri { width:60px; padding:5px 5px; border:1.5px solid #f59e0b; border-radius:6px 0 0 6px; font-size:12px; text-align:center; outline:none; }
+  .ti-fri:focus { border-color:#b45309; }
+  .ap-fri { padding:5px 3px; border:1.5px solid #f59e0b; border-left:none; border-radius:0 6px 6px 0; font-size:11px; background:#fffbeb; cursor:pointer; }
+  .ap-fri:focus { border-color:#b45309; }
+  .dash-cell { text-align:center; color:#d1d5db; font-size:18px; letter-spacing:2px; }
 </style>
 {% endblock %}
 
@@ -110,6 +131,7 @@
           <th class="hdr" colspan="2">Asr</th>
           <th class="hdr" colspan="2">Maghrib</th>
           <th class="hdr" colspan="2">Isha</th>
+          <th class="hdr hdr-jummah" colspan="2">🕌 Jummah <span style="font-size:10px;opacity:.8">(Friday)</span></th>
         </tr>
         <tr class="sub-row">
           <th>Adhan</th><th>Iqamah</th>
@@ -118,13 +140,14 @@
           <th>Adhan</th><th>Iqamah</th>
           <th>Adhan</th><th>Iqamah</th>
           <th>Adhan</th><th>Iqamah</th>
+          <th class="sub-jummah">Khutbah</th><th class="sub-jummah">Iqamah</th>
         </tr>
       </thead>
       <tbody>
         {% for day in days %}
-        <tr data-day="{{ day.day }}">
+        <tr data-day="{{ day.day }}" {% if day.is_friday %}class="friday-row"{% endif %}>
           <td class="date-cell">
-            {{ day.label }}
+            {{ day.label }}{% if day.is_friday %}<span class="fri-badge">Jummah</span>{% endif %}
             <button type="button" class="copy-row-btn" onclick="copyRowDown({{ day.day }},{{ days|length }})">↓ Copy down</button>
           </td>
           {# Fajr Adhan #}
@@ -215,6 +238,25 @@
               <option value="PM" {% if day.isha_iqamah_ap == "PM" %}selected{% endif %}>PM</option>
             </select>
           </div></td>
+          {# Jummah — only active on Fridays #}
+          {% if day.is_friday %}
+          <td class="jumuah-cell"><div class="pcell">
+            <input class="ti-fri" type="text" name="jumuah_adhan_t_{{ day.day }}" placeholder="01:00" value="{{ day.jumuah_adhan_t }}">
+            <select class="ap-fri" name="jumuah_adhan_ap_{{ day.day }}">
+              <option value="AM" {% if day.jumuah_adhan_ap == "AM" %}selected{% endif %}>AM</option>
+              <option value="PM" {% if day.jumuah_adhan_ap == "PM" or not day.jumuah_adhan_ap %}selected{% endif %}>PM</option>
+            </select>
+          </div></td>
+          <td class="jumuah-cell"><div class="pcell">
+            <input class="ti-fri" type="text" name="jumuah_iqamah_t_{{ day.day }}" placeholder="01:30" value="{{ day.jumuah_iqamah_t }}">
+            <select class="ap-fri" name="jumuah_iqamah_ap_{{ day.day }}">
+              <option value="AM" {% if day.jumuah_iqamah_ap == "AM" %}selected{% endif %}>AM</option>
+              <option value="PM" {% if day.jumuah_iqamah_ap == "PM" or not day.jumuah_iqamah_ap %}selected{% endif %}>PM</option>
+            </select>
+          </div></td>
+          {% else %}
+          <td class="dash-cell" colspan="2">—</td>
+          {% endif %}
         </tr>
         {% endfor %}
       </tbody>
