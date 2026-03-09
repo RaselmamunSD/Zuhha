@@ -377,6 +377,7 @@ def dispatch_subscription_notifications(self):
                         mosque.id,
                         prayer_name,
                         message,
+                        prayer_time_value.strftime('%H:%M'),
                     )
 
                 notifications_queued += 1
@@ -447,7 +448,7 @@ def queue_whatsapp_for_subscription(self, subscription_id, mosque_id, prayer_nam
 
 
 @shared_task(bind=True, max_retries=3)
-def queue_email_for_subscription(self, subscription_id, mosque_id, prayer_name, message):
+def queue_email_for_subscription(self, subscription_id, mosque_id, prayer_name, message, prayer_time_24h=None):
     """Queue email message for a subscription."""
     from subscribe.models import Subscription, SubscriptionLog
     from find_mosque.models import Mosque
@@ -463,9 +464,24 @@ def queue_email_for_subscription(self, subscription_id, mosque_id, prayer_name, 
             'maghrib': 'Maghrib (Sunset)', 'isha': 'Isha (Night)', 'jumuah': "Jumu'ah (Friday)",
         }.get(prayer_name.lower(), prayer_name.title())
 
-        # Extract time from message for subject
-        prayer_time_str = message.split('Time   : ')[-1].split('\n')[0].strip() if 'Time   :' in message else ''
-        subject = f"🕌 Prayer Reminder: {prayer_display} at {mosque.name} — {prayer_time_str}"
+        # Use the directly-passed 24h time; fallback: parse from the WhatsApp message
+        if prayer_time_24h:
+            clean_time = prayer_time_24h  # e.g. '05:00'
+        else:
+            raw = message.split('Time   : ')[-1].split('\n')[0].strip() if 'Time   :' in message else ''
+            clean_time = raw.replace('*', '').strip()
+
+        # Convert HH:MM to 12h display string
+        try:
+            h, m = map(int, clean_time.split(':'))
+            period = 'AM' if h < 12 else 'PM'
+            h12 = h % 12 or 12
+            time_display = f'{h12}:{m:02d} {period}'
+        except Exception:
+            time_display = clean_time
+
+        minutes_before = subscription.notification_minutes_before or 10
+        subject = f"🕌 Prayer Reminder: {prayer_display} at {mosque.name} — {time_display} (in {minutes_before} min)"
 
         log = SubscriptionLog.objects.create(
             subscription=subscription,
@@ -477,8 +493,8 @@ def queue_email_for_subscription(self, subscription_id, mosque_id, prayer_name, 
 
         email_body = _build_email_body(
             prayer_name,
-            prayer_time_str,
-            subscription.notification_minutes_before or 10,
+            clean_time,
+            minutes_before,
             mosque.name,
         )
 
