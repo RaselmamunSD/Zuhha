@@ -304,11 +304,45 @@ def dispatch_subscription_notifications(self):
             minutes_before = 10
 
         for mosque in mosques:
+            # Resolve today's prayer times: prefer MosqueMonthlyPrayerTime, fallback to static fields
+            from find_mosque.models import MosqueMonthlyPrayerTime
+            monthly = MosqueMonthlyPrayerTime.objects.filter(
+                mosque=mosque,
+                year=now_local.year,
+                month=now_local.month,
+                day=now_local.day,
+            ).first()
+
+            # Map prayer name → adhan time using monthly timetable or static mosque fields
+            STATIC_FIELD_MAP = {
+                'fajr': 'fajr_beginning',
+                'dhuhr': 'dhuhr_beginning',
+                'asr': 'asr_beginning',
+                'maghrib': 'maghrib_sunset',  # correct field name on Mosque model
+                'isha': 'isha_beginning',
+            }
+            MONTHLY_FIELD_MAP = {
+                'fajr': 'fajr_adhan',
+                'dhuhr': 'dhuhr_adhan',
+                'asr': 'asr_adhan',
+                'maghrib': 'maghrib_adhan',
+                'isha': 'isha_adhan',
+            }
+
             for prayer_name in requested_prayers:
                 if prayer_name not in prayer_names:
                     continue
 
-                prayer_time_value = getattr(mosque, f'{prayer_name}_beginning', None)
+                # Try monthly timetable adhan time first
+                if monthly:
+                    prayer_time_value = getattr(monthly, MONTHLY_FIELD_MAP.get(prayer_name, ''), None)
+                else:
+                    prayer_time_value = None
+
+                # Fallback to static mosque fields
+                if not prayer_time_value:
+                    prayer_time_value = getattr(mosque, STATIC_FIELD_MAP.get(prayer_name, ''), None)
+
                 if not prayer_time_value:
                     continue
 

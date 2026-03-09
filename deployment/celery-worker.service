@@ -1,0 +1,32 @@
+[Unit]
+Description=Salahtime Celery Worker
+Documentation=https://docs.celeryq.dev
+After=network.target redis-server.service
+Wants=redis-server.service
+
+[Service]
+Type=forking
+User=mdraselbackenddev
+Group=mdraselbackenddev
+WorkingDirectory=/home/mdraselbackenddev/Rasel/zuhha/salahtime
+
+Environment="PATH=/home/mdraselbackenddev/Rasel/zuhha/.venv/bin"
+Environment="PYTHONUNBUFFERED=1"
+Environment="DJANGO_SETTINGS_MODULE=config.settings"
+
+ExecStart=/home/mdraselbackenddev/Rasel/zuhha/.venv/bin/celery \
+    -A config worker \
+    --loglevel=info \
+    --logfile=/home/mdraselbackenddev/Rasel/zuhha/salahtime/logs/celery_worker.log \
+    --pidfile=/tmp/celery_worker.pid \
+    --detach
+
+ExecStop=/bin/kill -s TERM $(/bin/cat /tmp/celery_worker.pid)
+
+ExecReload=/bin/kill -s HUP $(/bin/cat /tmp/celery_worker.pid)
+
+Restart=always
+RestartSec=10
+
+[Install]
+WantedBy=multi-user.target
