@@ -2,6 +2,7 @@ from rest_framework import viewsets, status
 from rest_framework.decorators import action, api_view, permission_classes
 from rest_framework.response import Response
 from rest_framework.permissions import AllowAny
+from django.utils import timezone
 from .models import NewsletterSubscription, NewsletterLog
 from .serializers import NewsletterSubscriptionSerializer, NewsletterSubscribeSerializer, NewsletterLogSerializer
 import logging
@@ -63,8 +64,8 @@ def unsubscribe_newsletter(request):
 
         subscription = NewsletterSubscription.objects.get(email=email)
         subscription.is_active = False
-        subscription.unsubscribed_at = None
-        subscription.save()
+        subscription.unsubscribed_at = timezone.now()
+        subscription.save(update_fields=['is_active', 'unsubscribed_at'])
         return Response(
             {'message': f'Successfully unsubscribed {email} from newsletter'},
             status=status.HTTP_200_OK

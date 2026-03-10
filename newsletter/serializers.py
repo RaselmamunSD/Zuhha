@@ -13,14 +13,17 @@ class NewsletterSubscribeSerializer(serializers.ModelSerializer):
     """
     Serializer for creating/subscribing to newsletter.
     """
+    # Remove DRF's auto-applied UniqueValidator so existing emails are
+    # handled by the get_or_create logic in create() rather than rejected.
+    email = serializers.EmailField(validators=[])
+
     class Meta:
         model = NewsletterSubscription
         fields = ['email']
 
     def create(self, validated_data):
         """
-        Create or get existing subscription.
-        If email already exists, return the existing subscription.
+        Create or reactivate existing subscription.
         """
         email = validated_data.get('email')
         subscription, created = NewsletterSubscription.objects.get_or_create(
@@ -31,6 +34,11 @@ class NewsletterSubscribeSerializer(serializers.ModelSerializer):
                 'important_announcements': True
             }
         )
+        if not created and not subscription.is_active:
+            # Reactivate a previously unsubscribed user
+            subscription.is_active = True
+            subscription.unsubscribed_at = None
+            subscription.save(update_fields=['is_active', 'unsubscribed_at', 'updated_at'])
         return subscription
 
     def to_representation(self, instance):
