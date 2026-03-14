@@ -7,6 +7,8 @@ import environ
 from pathlib import Path
 from datetime import timedelta
 import os
+import sys
+from urllib.parse import urlparse
 
 BASE_DIR = Path(__file__).resolve().parent.parent
 
@@ -29,13 +31,42 @@ SECRET_KEY = env("SECRET_KEY", default="change-me-in-production-min-50-character
 # Determine if we're in production
 DEBUG = env("DEBUG", default=False)
 PRODUCTION = not DEBUG
+IS_RUNSERVER = "runserver" in sys.argv
 
 # ALLOWED_HOSTS
 # Read from environment, but force wide-open in DEBUG for local development
-ALLOWED_HOSTS = env.list(
+raw_allowed_hosts = env.list(
     "ALLOWED_HOSTS",
     default=["127.0.0.1", "localhost", "[::1]"]
 )
+
+def _normalize_host(entry: str) -> str:
+    host = (entry or "").strip()
+    if not host:
+        return ""
+
+    if "://" in host:
+        parsed_host = urlparse(host).hostname
+        host = parsed_host or ""
+    else:
+        host = host.split("/", 1)[0]
+        if host.startswith("[") and host.endswith("]"):
+            host = host[1:-1]
+        elif host.count(":") == 1:
+            maybe_host, maybe_port = host.split(":", 1)
+            if maybe_port.isdigit():
+                host = maybe_host
+
+    return host.strip()
+
+ALLOWED_HOSTS = [h for h in (_normalize_host(v) for v in raw_allowed_hosts) if h]
+if not ALLOWED_HOSTS:
+    ALLOWED_HOSTS = ["127.0.0.1", "localhost", "::1"]
+
+# Always allow loopback hosts for local runs.
+for local_host in ["127.0.0.1", "localhost", "::1"]:
+    if local_host not in ALLOWED_HOSTS:
+        ALLOWED_HOSTS.append(local_host)
 
 if DEBUG:
     # For local/dev we accept all hosts to avoid DisallowedHost issues
@@ -47,11 +78,11 @@ SECURE_PROXY_SSL_HEADER = ("HTTP_X_FORWARDED_PROTO", "https")
 # Trust the X-Forwarded-Host header from reverse proxies / Cloudflare tunnels
 # so request.build_absolute_uri() returns the correct public URL
 USE_X_FORWARDED_HOST = True
-SESSION_COOKIE_SECURE = True
-CSRF_COOKIE_SECURE = True
-SECURE_HSTS_SECONDS = 31536000  # 1 year
-SECURE_HSTS_INCLUDE_SUBDOMAINS = True
-SECURE_HSTS_PRELOAD = True
+SESSION_COOKIE_SECURE = env.bool("SESSION_COOKIE_SECURE", default=PRODUCTION)
+CSRF_COOKIE_SECURE = env.bool("CSRF_COOKIE_SECURE", default=PRODUCTION)
+SECURE_HSTS_SECONDS = env.int("SECURE_HSTS_SECONDS", default=31536000 if PRODUCTION else 0)
+SECURE_HSTS_INCLUDE_SUBDOMAINS = env.bool("SECURE_HSTS_INCLUDE_SUBDOMAINS", default=PRODUCTION)
+SECURE_HSTS_PRELOAD = env.bool("SECURE_HSTS_PRELOAD", default=PRODUCTION)
 
 # Content Security
 SECURE_CONTENT_TYPE_NOSNIFF = True
@@ -60,10 +91,17 @@ X_FRAME_OPTIONS = "DENY"
 
 # HTTPS (force redirect to HTTPS in production)
 if PRODUCTION:
-    SECURE_SSL_REDIRECT = True
+    SECURE_SSL_REDIRECT = env.bool("SECURE_SSL_REDIRECT", default=True)
     SECURE_HSTS_SECONDS = 31536000
     SECURE_HSTS_INCLUDE_SUBDOMAINS = True
     SECURE_HSTS_PRELOAD = True
+
+# Never force HTTPS when running Django development server locally.
+if IS_RUNSERVER:
+    SECURE_SSL_REDIRECT = env.bool("SECURE_SSL_REDIRECT", default=False)
+    SECURE_HSTS_SECONDS = 0
+    SECURE_HSTS_INCLUDE_SUBDOMAINS = False
+    SECURE_HSTS_PRELOAD = False
 
 # ===================================================================
 # APPLICATION DEFINITION
@@ -225,6 +263,10 @@ STATICFILES_DIRS = [
     BASE_DIR / "static",
 ] if (BASE_DIR / "static").exists() else []
 
+# Avoid noisy local warning when production STATIC_ROOT path does not exist.
+if IS_RUNSERVER and not Path(STATIC_ROOT).exists():
+    STATIC_ROOT = str(BASE_DIR / "staticfiles")
+
 # WhiteNoise configuration for serving static files in production
 STATICFILES_STORAGE = "whitenoise.storage.CompressedManifestStaticFilesStorage"
 
@@ -350,9 +392,25 @@ CELERY_BEAT_SCHEDULE = {
 # LOGGING - PRODUCTION CONFIGURATION
 # ===================================================================
 
+def suppress_https_probe_logs(record):
+    message = record.getMessage()
+    blocked_patterns = (
+        "You're accessing the development server over HTTPS",
+        "Bad request version",
+        "Bad request syntax",
+        "Bad HTTP/0.9 request type",
+    )
+    return not any(pattern in message for pattern in blocked_patterns)
+
 LOGGING = {
     "version": 1,
     "disable_existing_loggers": False,
+    "filters": {
+        "suppress_https_probes": {
+            "()": "django.utils.log.CallbackFilter",
+            "callback": suppress_https_probe_logs,
+        },
+    },
     "formatters": {
         "verbose": {
             "format": "{levelname} {asctime} {module} {message}",
@@ -394,6 +452,12 @@ LOGGING = {
             "handlers": ["error_file"],
             "level": "WARNING",
             "propagate": False,
+        },
+        "django.server": {
+            "handlers": ["console"],
+            "level": "INFO",
+            "propagate": False,
+            "filters": ["suppress_https_probes"],
         },
         "celery": {
             "handlers": ["console", "file"],
@@ -479,7 +543,7 @@ TEMPLATES = [
     {
         "BACKEND": "django.template.backends.django.DjangoTemplates",
         "DIRS": [],
-        "APP_DIRS": True,
+        "APP_DIRS": False,
         "OPTIONS": {
             "context_processors": [
                 "django.template.context_processors.debug",
@@ -502,7 +566,7 @@ if PRODUCTION:
         {
             "BACKEND": "django.template.backends.django.DjangoTemplates",
             "DIRS": [],
-            "APP_DIRS": True,
+            "APP_DIRS": False,
             "OPTIONS": {
                 "context_processors": [
                     "django.template.context_processors.debug",
@@ -522,4 +586,3 @@ if PRODUCTION:
             },
         },
     ]
-
